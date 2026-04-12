@@ -138,6 +138,28 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
   background:var(--accent);color:var(--bg);font:700 var(--fs-sm)/1 var(--mono);letter-spacing:1px;
   border-radius:26px;box-shadow:0 4px 20px rgba(0,255,106,.25);z-index:80;transition:transform .1s}
 .fab:active{transform:scale(.95)}
+.sess-fab{position:fixed;right:var(--gap);bottom:calc(var(--nav-h) + var(--gap) + 60px + var(--kb-inset));
+  height:52px;padding:0 20px;display:flex;align-items:center;gap:8px;
+  font:700 var(--fs-sm)/1 var(--mono);letter-spacing:1px;border-radius:26px;z-index:80;
+  border:1px solid var(--accent-dim);color:var(--accent-dim);background:var(--bg);transition:all .1s}
+.sess-fab:active{transform:scale(.95)}
+.sess-fab.active-session{border-color:var(--danger);color:var(--danger);background:var(--danger-muted)}
+.sess-timer{font:400 var(--fs-xs)/1 var(--mono);opacity:.8}
+
+/* ══════════════ LIBRARY: SESSION CARDS ══════════════ */
+.sess-card{background:var(--surface);border-radius:var(--radius-sm);padding:var(--gap);
+  margin-bottom:var(--gap-sm);border-left:3px solid var(--border);cursor:pointer;min-height:72px;
+  transition:background .1s}
+.sess-card:active{background:var(--surface-2)}
+.sess-card.sess-active{border-left-color:var(--accent)}
+.sess-label{font:600 var(--fs-md)/1.2 var(--sans);color:var(--text)}
+.sess-card.sess-active .sess-label{color:var(--accent)}
+.sess-dur{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:4px}
+.sess-counts{font:400 var(--fs-xs)/1 var(--mono);color:var(--muted);margin-top:6px}
+.sess-status{display:inline-flex;align-items:center;gap:4px;font:700 10px/1 var(--mono);
+  padding:2px 6px;border-radius:3px;margin-top:6px}
+.sess-status.active{background:var(--accent-muted);color:var(--accent)}
+.sess-status.completed{background:rgba(255,255,255,.05);color:var(--dim)}
 
 /* ══════════════ LIBRARY: SEARCH ══════════════ */
 .search-bar{position:sticky;top:0;z-index:10;padding-bottom:var(--gap-sm);background:var(--bg)}
@@ -277,6 +299,58 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
   overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .ci-rel{display:block;font:400 10px/1 var(--mono);color:var(--dim);margin-top:4px;padding-left:8px}
 
+/* ══════════════ SESSION DETAIL ══════════════ */
+.sd-hdr{display:flex;align-items:center;gap:8px;padding-bottom:var(--gap-sm);border-bottom:1px solid var(--border);margin-bottom:var(--gap-sm)}
+.sd-back{min-width:var(--tap);min-height:var(--tap);display:flex;align-items:center;
+  font:600 var(--fs-sm)/1 var(--mono);color:var(--accent-dim);gap:4px}
+.sd-back:active{opacity:.6}
+.sd-info{flex:1;min-width:0;text-align:center}
+.sd-title{font:600 var(--fs-md)/1.2 var(--sans);color:var(--text)}
+.sd-meta{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:3px}
+.sd-export{min-width:var(--tap);min-height:var(--tap);display:flex;align-items:center;justify-content:center;
+  font-size:18px;color:var(--muted)}
+.sd-export:active{color:var(--accent)}
+.sd-overview{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:var(--gap-sm) 0;
+  font:400 var(--fs-xs)/1 var(--mono);color:var(--dim)}
+.sd-overview::-webkit-scrollbar{display:none}
+.sd-overview span{white-space:nowrap}
+.sd-tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border);
+  margin-bottom:var(--gap-sm)}
+.sd-tabs::-webkit-scrollbar{display:none}
+.sd-tab{font:400 var(--fs-xs)/1 var(--mono);letter-spacing:.5px;padding:10px 12px;
+  white-space:nowrap;color:var(--dim);border-bottom:2px solid transparent;min-height:var(--tap);
+  display:flex;align-items:center;transition:all .12s;flex-shrink:0}
+.sd-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.sd-tab:active{opacity:.6}
+.sd-content{min-height:200px}
+.sd-time-hdr{font:700 var(--fs-xs)/1 var(--mono);color:var(--dim);letter-spacing:1px;
+  padding:var(--gap-sm) 0 4px;text-transform:uppercase}
+.sd-item{display:flex;gap:10px;padding:12px;min-height:64px;background:var(--surface);
+  border-radius:var(--radius-sm);margin-bottom:2px;cursor:pointer;align-items:flex-start}
+.sd-item:active{background:var(--surface-2)}
+.sd-item-time{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);min-width:40px;padding-top:2px}
+.sd-item-body{flex:1;min-width:0}
+.sd-item-text{font:500 var(--fs-sm)/1.3 var(--sans);color:var(--text)}
+.sd-item-meta{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:4px;display:flex;gap:6px;flex-wrap:wrap}
+.sd-grp-label{font:700 10px/1 var(--mono);letter-spacing:2px;color:var(--dim);
+  text-transform:uppercase;padding:var(--gap-sm) 0 4px}
+.sd-export-strip{display:flex;gap:8px;padding:var(--gap-sm) 0}
+.sd-export-chip{font:600 var(--fs-xs)/1 var(--mono);padding:6px 12px;border-radius:16px;
+  border:1px solid var(--border);color:var(--muted);min-height:36px;display:flex;align-items:center}
+.sd-export-chip:active{background:var(--accent-muted);color:var(--accent);border-color:var(--accent-dim)}
+
+/* ══════════════ EXPORT SHEET ══════════════ */
+.exp-btn{min-height:56px;font:600 var(--fs-sm)/1 var(--mono);letter-spacing:.5px;width:100%;
+  border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);color:var(--muted);margin-bottom:8px;transition:all .12s}
+.exp-btn:active{background:var(--accent-muted);color:var(--accent);border-color:var(--accent-dim)}
+.exp-confirm{font:400 var(--fs-sm)/1 var(--mono);color:var(--accent);text-align:center;padding:12px 0;display:none}
+.exp-confirm.show{display:block}
+.exp-fallback{width:100%;min-height:200px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:12px;font:400 var(--fs-xs)/1.4 var(--mono);color:var(--text);
+  overflow-y:auto;display:none;margin-bottom:var(--gap-sm)}
+.exp-fallback.show{display:block}
+
 /* ══════════════ RESPONSIVE ══════════════ */
 @media(min-width:430px){
   .kpi{grid-template-columns:repeat(4,1fr)}
@@ -318,9 +392,22 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
     </div>
     <div class="filters" id="filters"></div>
   </div>
+  <div id="sess-list"></div>
   <div id="mlist"></div>
   <div class="conn-view" id="conn-view"></div>
   <div class="empty" id="m-empty">No items yet</div>
+  <!-- Session detail (full screen, hidden by default) -->
+  <div id="sd-view" style="display:none">
+    <div class="sd-hdr">
+      <button class="sd-back" id="sd-back">&larr; LIBRARY</button>
+      <div class="sd-info"><div class="sd-title" id="sd-title"></div><div class="sd-meta" id="sd-meta"></div></div>
+      <button class="sd-export" id="sd-export-btn">&#8599;</button>
+    </div>
+    <div class="sd-overview" id="sd-overview"></div>
+    <div class="sd-export-strip"><button class="sd-export-chip" id="sd-export-chip">EXPORT</button></div>
+    <div class="sd-tabs" id="sd-tabs"></div>
+    <div class="sd-content" id="sd-content"></div>
+  </div>
 </div>
 
 <!-- ═══ CONTROL ═══ -->
@@ -338,6 +425,7 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
 </div><!-- #content -->
 
 <!-- ── FAB ── -->
+<button class="sess-fab" id="sess-fab">START SESSION</button>
 <button class="fab" id="fab">FACT CHECK</button>
 
 <!-- ── NAV ── -->
@@ -350,8 +438,10 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
 
 <!-- SHEETS -->
 <div class="sheet-bg" id="detail-bg"><div class="sheet"><div class="sheet-handle"></div><div id="detail-body"></div></div></div>
+<div class="sheet-bg" id="exp-bg"><div class="sheet"><div class="sheet-handle"></div><div class="sh"><span class="sh-t">Export Session</span><span class="sh-line"></span></div><button class="exp-btn" id="exp-text">COPY AS TEXT</button><button class="exp-btn" id="exp-json">COPY AS JSON</button><button class="exp-btn" id="exp-share" style="display:none">SHARE</button><div class="exp-confirm" id="exp-msg"></div><textarea class="exp-fallback" id="exp-fb" readonly></textarea></div></div>
 <div class="sheet-bg" id="qa-bg"><div class="sheet"><div class="sheet-handle"></div><div class="sh"><span class="sh-t">Quick Actions</span><span class="sh-line"></span></div><div class="qa-grid" id="qa-grid"></div></div></div>
 <div class="modal-bg" id="modal"><div class="modal"><h3>FORGET ALL MEMORY</h3><p>This erases all stored commitments, decisions, entities, and session data permanently.</p><div class="modal-btns"><button class="m-cancel" id="m-no">CANCEL</button><button class="m-ok" id="m-yes">FORGET</button></div></div></div>
+<div class="modal-bg" id="sess-modal"><div class="modal"><h3 style="color:var(--accent)">END SESSION</h3><p>End this session? All artifacts will be saved.</p><div class="modal-btns"><button class="m-cancel" id="sm-no">CANCEL</button><button class="m-ok" style="background:var(--accent-muted);color:var(--accent);border-color:var(--accent-dim)" id="sm-yes">CONFIRM</button></div></div></div>
 
 <!-- GLASSES LOGIC -->
 <script type="module" src="/src/main.ts"></script>
@@ -387,7 +477,8 @@ var QA=[
   {l:"STATS",p:"even stats"},{l:"HELP",p:"even help"}
 ];
 var FILTERS=[
-  {id:"all",l:"ALL"},{id:"connections",l:"CONNECTIONS"},{id:"commitment",l:"COMMITS"},{id:"decision",l:"DECISIONS"},
+  {id:"sessions",l:"SESSIONS"},{id:"all",l:"ALL"},{id:"connections",l:"CONNECTIONS"},
+  {id:"commitment",l:"COMMITS"},{id:"decision",l:"DECISIONS"},
   {id:"entity",l:"ENTITIES"},{id:"pinned",l:"PINNED"},{id:"contradiction",l:"CONFLICTS"}
 ];
 var TB={commitment:"b-commit",decision:"b-decision",entity:"b-entity",pinned:"b-pinned",contradiction:"b-contra"};
@@ -396,7 +487,7 @@ var CB={HIGH:"b-high",MED:"b-med",LOW:"b-low"};
 var MC={ALERT:"alert",CARD:"card-t",COMPACT:"card-t",PASSIVE:"passive"};
 
 /* ── STATE ── */
-var curFilter="all",searchQ="",lastVer=0,fired={},connEntityFilter="";
+var curFilter="sessions",searchQ="",lastVer=0,fired={},connEntityFilter="";
 
 /* ── HELPERS ── */
 function esc(s){var d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
@@ -419,6 +510,17 @@ navBtns.forEach(function(n){n.addEventListener("click",function(){
   titleEl.textContent=titles[n.dataset.pg]||"";
 })});
 
+/* ── SESSION FAB ── */
+var sessFab=document.getElementById("sess-fab"),sessModalEl=document.getElementById("sess-modal");
+function fireSess(action){window.dispatchEvent(new CustomEvent("validateai-session",{detail:{action:action}}))}
+sessFab.addEventListener("click",function(){
+  var S=window.validateAIState;
+  if(S&&S.activeSessionId){sessModalEl.classList.add("show")}
+  else{fireSess("START")}
+});
+document.getElementById("sm-no").addEventListener("click",function(){sessModalEl.classList.remove("show")});
+document.getElementById("sm-yes").addEventListener("click",function(){sessModalEl.classList.remove("show");fireSess("END")});
+
 /* ── FAB ── */
 document.getElementById("fab").addEventListener("click",function(){fire("even check")});
 document.getElementById("fab").addEventListener("contextmenu",function(e){e.preventDefault();openQA()});
@@ -440,7 +542,7 @@ qxEl.addEventListener("click",function(){qEl.value="";searchQ="";qxEl.classList.
 
 /* ── FILTERS ── */
 var filtersEl=document.getElementById("filters");
-(function(){var h="";FILTERS.forEach(function(f){h+='<button class="fchip'+(f.id==="all"?" active":"")+'" data-f="'+f.id+'">'+f.l+'</button>'});filtersEl.innerHTML=h;
+(function(){var h="";FILTERS.forEach(function(f){h+='<button class="fchip'+(f.id==="sessions"?" active":"")+'" data-f="'+f.id+'">'+f.l+'</button>'});filtersEl.innerHTML=h;
   filtersEl.querySelectorAll(".fchip").forEach(function(c){c.addEventListener("click",function(){
     filtersEl.querySelectorAll(".fchip").forEach(function(x){x.classList.remove("active")});c.classList.add("active");curFilter=c.dataset.f;
   })});
@@ -489,9 +591,267 @@ function rNow(S){
     fL.innerHTML=fh}
 }
 
+/* ── RENDER: SESSION FAB ── */
+function rSessFab(S){
+  var active=S.activeSessionId;
+  if(active){
+    sessFab.classList.add("active-session");
+    var ss=S.sessions&&S.sessions.find(function(x){return x.id===active});
+    var elapsed=ss?dur(Date.now()-new Date(ss.startedAt).getTime()):"";
+    sessFab.innerHTML="END SESSION"+(elapsed?' <span class="sess-timer">\u00b7 '+elapsed+"</span>":"");
+  }else{
+    sessFab.classList.remove("active-session");
+    sessFab.textContent="START SESSION";
+  }
+}
+
+/* ── RENDER: SESSION LIST ── */
+function rSess(S){
+  var sessions=S.sessions||[];
+  var sL=document.getElementById("sess-list");
+  if(!sessions.length){sL.innerHTML="";return}
+  var h="";
+  sessions.forEach(function(s,idx){
+    var isActive=s.status==="active";
+    var dStr="";
+    if(isActive){dStr="ongoing"}
+    else if(s.startedAt&&s.endedAt){
+      var ms=new Date(s.endedAt).getTime()-new Date(s.startedAt).getTime();
+      dStr=Math.round(ms/60000)+" min";
+    }
+    var st=s.stats||{};
+    var counts=[];
+    if(st.factsChecked)counts.push(st.factsChecked+" facts");
+    if(st.commitmentsStored)counts.push(st.commitmentsStored+" commits");
+    if(st.decisionsStored)counts.push(st.decisionsStored+" decisions");
+    if(st.entitiesTracked)counts.push(st.entitiesTracked+" entities");
+    h+='<div class="sess-card'+(isActive?" sess-active":"")+'" data-sid="'+esc(s.id)+'">';
+    h+='<div class="sess-label">'+(isActive?"Current Session":"")+(isActive?" \u00b7 ":"")+esc(s.label)+'</div>';
+    if(dStr)h+='<div class="sess-dur">'+esc(dStr)+'</div>';
+    if(counts.length)h+='<div class="sess-counts">'+counts.join(" \u00b7 ")+'</div>';
+    h+='<span class="sess-status '+(isActive?"active":"completed")+'">'+(isActive?"\u25cf ACTIVE":"COMPLETED")+'</span>';
+    h+='</div>';
+  });
+  // Unsorted items
+  var unsorted=0;
+  (S.commitments||[]).forEach(function(c){if(!c.sessionId)unsorted++});
+  (S.pinned||[]).forEach(function(p){if(!p.sessionId)unsorted++});
+  (S.entities||[]).forEach(function(e){if(!e.sessionId)unsorted++});
+  if(unsorted>0){
+    h+='<div class="sess-card" data-sid="unsorted"><div class="sess-label" style="color:var(--dim)">Unsorted Items</div><div class="sess-counts">'+unsorted+' items without a session</div></div>';
+  }
+  sL.innerHTML=h;
+  sL.querySelectorAll(".sess-card").forEach(function(el){el.addEventListener("click",function(){
+    var sid=el.dataset.sid;if(!sid)return;
+    if(sid==="unsorted"){openDetail('<div class="sheet-label">UNSORTED ITEMS</div><div class="sheet-val">Items created before session management. Switch to ALL filter to browse them.</div>');return}
+    openSessionDetail(sid);
+  })});
+}
+
+/* ── SESSION DETAIL VIEW ── */
+var sdViewEl=document.getElementById("sd-view"),sdSid="",sdTab="timeline";
+var sdElems={title:document.getElementById("sd-title"),meta:document.getElementById("sd-meta"),
+  overview:document.getElementById("sd-overview"),tabs:document.getElementById("sd-tabs"),
+  content:document.getElementById("sd-content")};
+
+function openSessionDetail(sid){
+  sdSid=sid;sdTab="timeline";
+  // Hide library list elements, show detail
+  document.getElementById("sess-list").style.display="none";
+  document.getElementById("mlist").style.display="none";
+  document.getElementById("m-empty").style.display="none";
+  document.getElementById("conn-view").classList.remove("show");
+  document.querySelector(".search-bar").style.display="none";
+  sdViewEl.style.display="";
+  renderSD();
+}
+
+function closeSessionDetail(){
+  sdViewEl.style.display="none";
+  document.querySelector(".search-bar").style.display="";
+  sdSid="";
+  // Let normal rLib take over on next poll
+}
+
+document.getElementById("sd-back").addEventListener("click",closeSessionDetail);
+
+function getSessionArtifacts(S,sid){
+  var a={commits:[],decisions:[],entities:[],pinned:[],facts:[]};
+  (S.commitments||[]).forEach(function(c){if(c.sessionId===sid)a.commits.push(c)});
+  (S.decisionsRaw||[]).forEach(function(d){if(d.sessionId===sid)a.decisions.push(d)});
+  (S.entities||[]).forEach(function(e){if(e.sessionId===sid)a.entities.push(e)});
+  (S.pinned||[]).forEach(function(p){if(p.sessionId===sid)a.pinned.push(p)});
+  // Facts from recentOutputs tagged with this session
+  (S.recentOutputs||[]).forEach(function(o){if(o.analyzer==="factValidation"&&o.triggered)a.facts.push(o)});
+  return a;
+}
+
+function renderSD(){
+  var S=window.validateAIState;if(!S||!sdSid)return;
+  var s=(S.sessions||[]).find(function(x){return x.id===sdSid});if(!s)return;
+  var art=getSessionArtifacts(S,sdSid);
+  var isActive=s.status==="active";
+  var dStr=isActive?"ongoing":"";
+  if(!isActive&&s.startedAt&&s.endedAt){dStr=Math.round((new Date(s.endedAt).getTime()-new Date(s.startedAt).getTime())/60000)+" min"}
+  sdElems.title.textContent=s.label;
+  sdElems.meta.textContent=dStr+(isActive?" \u00b7 ACTIVE":" \u00b7 COMPLETED");
+
+  var st=s.stats||{};
+  sdElems.overview.innerHTML='<span>'+(st.factsChecked||0)+' Facts</span><span>\u00b7</span><span>'+(st.commitmentsStored||0)+' Commits</span><span>\u00b7</span><span>'+(st.decisionsStored||0)+' Decisions</span><span>\u00b7</span><span>'+(st.entitiesTracked||0)+' Entities</span><span>\u00b7</span><span>'+(st.contradictionsDetected||0)+' Conflicts</span>';
+
+  var TABS=[{id:"timeline",l:"TIMELINE",n:art.commits.length+art.decisions.length+art.entities.length+art.pinned.length},
+    {id:"commits",l:"COMMITS",n:art.commits.length},{id:"decisions",l:"DECISIONS",n:art.decisions.length},
+    {id:"facts",l:"FACTS",n:art.facts.length},{id:"entities",l:"ENTITIES",n:art.entities.length},
+    {id:"all",l:"ALL",n:art.commits.length+art.decisions.length+art.entities.length+art.pinned.length+art.facts.length}];
+  var th="";TABS.forEach(function(t){th+='<button class="sd-tab'+(t.id===sdTab?" active":"")+'" data-t="'+t.id+'">'+t.l+' ('+t.n+')</button>'});
+  sdElems.tabs.innerHTML=th;
+  sdElems.tabs.querySelectorAll(".sd-tab").forEach(function(t){t.addEventListener("click",function(){sdTab=t.dataset.t;renderSD()})});
+
+  // Build all items for timeline/all
+  var allItems=[];
+  art.commits.forEach(function(c){allItems.push({t:"commitment",text:c.text,ts:c.ts,owner:c.owner,due:c.dueDate})});
+  art.decisions.forEach(function(d){allItems.push({t:"decision",text:d.text||d,ts:d.ts||0})});
+  art.entities.forEach(function(e){allItems.push({t:"entity",text:e.text,ts:e.ts,et:e.type,ctx:e.context})});
+  art.pinned.forEach(function(p){allItems.push({t:"pinned",text:p.text,ts:p.ts,src:p.source})});
+  art.facts.forEach(function(f){allItems.push({t:"fact",text:f.title+" — "+f.summary,ts:0,conf:f.confidence,verdict:f.details&&f.details.verdict})});
+  allItems.sort(function(a,b){return(a.ts||0)-(b.ts||0)});
+
+  var ch="";
+  if(sdTab==="timeline"){ch=renderSDTimeline(allItems)}
+  else if(sdTab==="commits"){ch=renderSDList(art.commits.map(function(c){return{t:"commitment",text:c.text,ts:c.ts,owner:c.owner,due:c.dueDate}}),"No commitments in this session")}
+  else if(sdTab==="decisions"){ch=renderSDList(art.decisions.map(function(d){return{t:"decision",text:d.text||d,ts:d.ts||0}}),"No decisions in this session")}
+  else if(sdTab==="facts"){ch=renderSDList(art.facts.map(function(f){return{t:"fact",text:f.title+" — "+f.summary,conf:f.confidence,verdict:f.details&&f.details.verdict}}),"No fact checks in this session")}
+  else if(sdTab==="entities"){ch=renderSDEntities(art.entities)}
+  else if(sdTab==="all"){ch=renderSDList(allItems,"No artifacts in this session")}
+  sdElems.content.innerHTML=ch;
+}
+
+function renderSDTimeline(items){
+  if(!items.length)return'<div class="empty">No artifacts in this session yet</div>';
+  // Group by 10-minute windows
+  var groups={},h="";
+  items.forEach(function(it){
+    var d=it.ts?new Date(it.ts):null;
+    var key=d?d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"Unknown";
+    if(!groups[key])groups[key]=[];groups[key].push(it);
+  });
+  Object.keys(groups).forEach(function(k){
+    h+='<div class="sd-time-hdr">'+esc(k)+'</div>';
+    groups[k].forEach(function(it){h+=renderSDItem(it)});
+  });
+  return h;
+}
+
+function renderSDList(items,emptyMsg){
+  if(!items.length)return'<div class="empty">'+esc(emptyMsg)+'</div>';
+  var h="";items.forEach(function(it){h+=renderSDItem(it)});return h;
+}
+
+function renderSDEntities(entities){
+  if(!entities.length)return'<div class="empty">No entities tracked in this session</div>';
+  var groups={PERSON:[],DATE:[],NUMBER:[],PLACE:[],ORGANIZATION:[]};
+  entities.forEach(function(e){var g=groups[e.type];if(g)g.push(e);else{if(!groups.OTHER)groups.OTHER=[];groups.OTHER.push(e)}});
+  var labels={PERSON:"PEOPLE",DATE:"DATES",NUMBER:"NUMBERS",PLACE:"PLACES",ORGANIZATION:"ORGANIZATIONS"};
+  var h="";
+  Object.keys(groups).forEach(function(k){
+    if(!groups[k].length)return;
+    h+='<div class="sd-grp-label">'+(labels[k]||k)+'</div>';
+    groups[k].forEach(function(e){
+      h+='<div class="sd-item"><span class="b '+(EB[e.type]||"b-entity")+'">'+esc(e.type)+'</span><div class="sd-item-body"><div class="sd-item-text">'+esc(e.text)+'</div><div class="sd-item-meta">'+esc(e.context||"")+(e.ts?' &middot; '+rel(e.ts):'')+'</div></div></div>';
+    });
+  });
+  return h;
+}
+
+function renderSDItem(it){
+  var badge=it.t==="entity"?(EB[it.et]||"b-entity"):it.t==="fact"?(it.verdict==="SUPPORTED"?"b-high":it.verdict==="DISPUTED"?"b-low":"b-med"):(TB[it.t]||"b-entity");
+  var label=it.t==="entity"?(it.et||"ENTITY"):it.t==="fact"?(it.verdict||"FACT"):it.t.toUpperCase();
+  var time=it.ts?new Date(it.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"";
+  var meta=[];
+  if(it.owner)meta.push(esc(it.owner));if(it.due)meta.push("by "+esc(it.due));
+  if(it.ctx)meta.push(esc(it.ctx));if(it.conf)meta.push('<span class="b '+(CB[it.conf]||"b-low")+'">'+esc(it.conf)+'</span>');
+  return'<div class="sd-item"><span class="sd-item-time">'+time+'</span><span class="b '+badge+'">'+label+'</span><div class="sd-item-body"><div class="sd-item-text">'+esc(it.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(' &middot; ')+'</div>':'')+'</div></div>';
+}
+
+/* ── SESSION EXPORT ── */
+var expBg=document.getElementById("exp-bg"),expMsg=document.getElementById("exp-msg"),expFb=document.getElementById("exp-fb");
+expBg.addEventListener("click",function(e){if(e.target===expBg){expBg.classList.remove("show");expMsg.classList.remove("show");expFb.classList.remove("show")}});
+
+function openExportSheet(){expMsg.classList.remove("show");expFb.classList.remove("show");expBg.classList.add("show");
+  if(navigator.share)document.getElementById("exp-share").style.display="";else document.getElementById("exp-share").style.display="none"}
+
+document.getElementById("sd-export-btn").addEventListener("click",openExportSheet);
+document.getElementById("sd-export-chip").addEventListener("click",openExportSheet);
+
+function buildExport(){
+  var S=window.validateAIState;if(!S||!sdSid)return{text:"",json:""};
+  var s=(S.sessions||[]).find(function(x){return x.id===sdSid});if(!s)return{text:"",json:""};
+  var art=getSessionArtifacts(S,sdSid);
+  var st=s.stats||{};
+  var dStr="";
+  if(s.startedAt&&s.endedAt){dStr=Math.round((new Date(s.endedAt).getTime()-new Date(s.startedAt).getTime())/60000)+" minutes"}
+  else{dStr="ongoing"}
+
+  var lines=[];
+  lines.push("\u2550".repeat(27));
+  lines.push("SESSION: "+s.label);
+  lines.push("Duration: "+dStr);
+  lines.push("\u2550".repeat(27));
+  lines.push("");
+  if(art.commits.length){
+    lines.push("COMMITMENTS ("+art.commits.length+")");lines.push("\u2500".repeat(15));
+    art.commits.forEach(function(c){var l="\u2022 "+c.text;if(c.owner)l+=" ("+c.owner+")";if(c.dueDate)l+=" by "+c.dueDate;lines.push(l)});
+    lines.push("");
+  }
+  if(art.decisions.length){
+    lines.push("DECISIONS ("+art.decisions.length+")");lines.push("\u2500".repeat(13));
+    art.decisions.forEach(function(d){lines.push("\u2022 "+(d.text||d))});lines.push("");
+  }
+  if(art.facts.length){
+    lines.push("FACTS CHECKED ("+art.facts.length+")");lines.push("\u2500".repeat(18));
+    art.facts.forEach(function(f){lines.push("\u2022 "+f.title+" \u2192 "+(f.details&&f.details.verdict||"?")); if(f.summary)lines.push("  "+f.summary)});lines.push("");
+  }
+  if(art.entities.length){
+    lines.push("ENTITIES");lines.push("\u2500".repeat(8));
+    var eg={};art.entities.forEach(function(e){if(!eg[e.type])eg[e.type]=[];eg[e.type].push(e.text)});
+    Object.keys(eg).forEach(function(k){lines.push(k+": "+eg[k].join(", "))});lines.push("");
+  }
+  lines.push("\u2550".repeat(27));lines.push("Exported from ValidateAI");lines.push("\u2550".repeat(27));
+
+  var json=JSON.stringify({session:s,commitments:art.commits,decisions:art.decisions,entities:art.entities,facts:art.facts,pinned:art.pinned},null,2);
+  return{text:lines.join("\n"),json:json};
+}
+
+function showExpMsg(msg){expMsg.textContent=msg;expMsg.classList.add("show");setTimeout(function(){expMsg.classList.remove("show")},2000)}
+
+document.getElementById("exp-text").addEventListener("click",function(){
+  var exp=buildExport();
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(exp.text).then(function(){showExpMsg("COPIED TO CLIPBOARD")}).catch(function(){expFb.value=exp.text;expFb.classList.add("show");expFb.select()})}
+  else{expFb.value=exp.text;expFb.classList.add("show");expFb.select()}
+});
+document.getElementById("exp-json").addEventListener("click",function(){
+  var exp=buildExport();
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(exp.json).then(function(){showExpMsg("JSON COPIED")}).catch(function(){expFb.value=exp.json;expFb.classList.add("show");expFb.select()})}
+  else{expFb.value=exp.json;expFb.classList.add("show");expFb.select()}
+});
+document.getElementById("exp-share").addEventListener("click",function(){
+  if(!navigator.share)return;
+  var exp=buildExport();
+  var S=window.validateAIState,s=(S&&S.sessions||[]).find(function(x){return x.id===sdSid});
+  navigator.share({title:"ValidateAI Session"+(s?" — "+s.label:""),text:exp.text}).catch(function(){})
+});
+
 /* ── RENDER: LIBRARY ── */
 function rLib(S){
-  var connView=document.getElementById("conn-view"),mL=document.getElementById("mlist"),mE=document.getElementById("m-empty");
+  // If session detail is open, render it instead and skip library
+  if(sdSid){renderSD();return}
+
+  var connView=document.getElementById("conn-view"),mL=document.getElementById("mlist"),mE=document.getElementById("m-empty"),sL=document.getElementById("sess-list");
+  // Sessions view
+  if(curFilter==="sessions"){mL.style.display="none";connView.classList.remove("show");sL.style.display="";rSess(S);
+    if(!(S.sessions||[]).length){mE.style.display="";mE.textContent="No sessions yet. Tap START SESSION to begin."}else{mE.style.display="none"}return}
+  sL.style.display="none";
+  // Connections view
   if(curFilter==="connections"){mL.style.display="none";mE.style.display="none";connView.classList.add("show");rConn(S);return}
   connView.classList.remove("show");mL.style.display="";
 
@@ -691,7 +1051,7 @@ setInterval(function(){
   if(!S){document.getElementById("s-text").textContent="CONNECTING...";return}
   if(S.version===lastVer)return;
   lastVer=S.version||0;
-  countFired(S);rNow(S);rLib(S);rCtrl(S);
+  countFired(S);rSessFab(S);rNow(S);rLib(S);rCtrl(S);
 },250);
 
 })();

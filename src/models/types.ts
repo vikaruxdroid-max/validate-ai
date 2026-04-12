@@ -53,6 +53,7 @@ export interface CommitmentEntry {
   owner?: string;
   dueDate?: string;
   ts: number;
+  sessionId?: string;
 }
 
 export type EntityType = "PERSON" | "DATE" | "NUMBER" | "PLACE" | "ORGANIZATION";
@@ -62,13 +63,37 @@ export interface EntityEntry {
   type: EntityType;
   context: string;
   ts: number;
+  sessionId?: string;
+}
+
+export interface PinnedItem {
+  id: string;
+  text: string;
+  source: string;
+  ts: number;
+  sessionId?: string;
+}
+
+export interface SessionEntry {
+  id: string;
+  label: string;
+  startedAt: string;
+  endedAt?: string;
+  status: "active" | "completed";
+  stats: {
+    factsChecked: number;
+    commitmentsStored: number;
+    decisionsStored: number;
+    entitiesTracked: number;
+    contradictionsDetected: number;
+  };
 }
 
 export interface IMemoryStore {
-  pin(item: { text: string; source: string }): void;
+  pin(item: { text: string; source: string }, sessionId?: string): void;
   recall(query: string): Promise<{ found: boolean; matches?: string[]; context?: string }>;
   getSession(): {
-    pinned: { id: string; text: string; source: string; ts: number }[];
+    pinned: PinnedItem[];
     commitments: CommitmentEntry[];
     decisions: string[];
     entities: EntityEntry[];
@@ -76,10 +101,14 @@ export interface IMemoryStore {
   getCommitments(): CommitmentEntry[];
   getDecisions(): string[];
   getEntities(): EntityEntry[];
+  getSessions(): SessionEntry[];
+  getCurrentSessionId(): string | null;
+  startSession(): string;
+  endSession(factsChecked: number, contradictions: number): void;
   clearSession(): void;
-  addCommitment(entry: { text: string; owner?: string; dueDate?: string }): void;
-  addDecision(text: string): void;
-  addEntity(entry: { text: string; type: EntityType; context: string }): void;
+  addCommitment(entry: { text: string; owner?: string; dueDate?: string }, sessionId?: string): void;
+  addDecision(text: string, sessionId?: string): void;
+  addEntity(entry: { text: string; type: EntityType; context: string }, sessionId?: string): void;
   toJSON(): string;
   loadJSON(json: string): void;
 }

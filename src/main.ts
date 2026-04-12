@@ -346,6 +346,9 @@ async function main(): Promise<void> {
       decisions: session.decisions,
       entities: session.entities,
       pinned: session.pinned,
+      sessions: store.getSessions(),
+      activeSessionId: store.getCurrentSessionId(),
+      decisionsRaw: store.getDecisionsRaw(),
       stats: {
         factsChecked: stats.factsChecked,
         contradictions: stats.contradictions,
@@ -383,6 +386,22 @@ async function main(): Promise<void> {
       console.log("[PhoneUI] trigger received:", phrase);
       orchestrator.handleTranscript(phrase);
     }
+  }) as EventListener);
+
+  // Listen for session management events from phone UI
+  window.addEventListener("validateai-session", ((e: CustomEvent) => {
+    const action = e.detail?.action;
+    const store = orchestrator.getMemoryStore();
+    if (action === "START") {
+      const id = store.startSession();
+      console.log("[PhoneUI] session started:", id);
+    } else if (action === "END") {
+      const stats = orchestrator.getStats();
+      store.endSession(stats.factsChecked, stats.contradictions);
+      store.save();
+      console.log("[PhoneUI] session ended and saved");
+    }
+    updatePhoneState();
   }) as EventListener);
 
   console.log("[ValidateAI] ready");
