@@ -10,6 +10,9 @@ export type SuggestedHudMode = "COMPACT" | "CARD" | "ALERT" | "PASSIVE";
 export interface TranscriptSegment {
   text: string;
   ts: number;
+  confidence?: number;
+  wordCount?: number;
+  durationMs?: number;
 }
 
 // ── Context types (future expansion) ────────────────────────────────
@@ -43,6 +46,23 @@ export interface AcousticFeatureWindow {
   pauseDuration?: number;
 }
 
+// ── Memory store interface ───────────────────────────────────────────
+
+export interface IMemoryStore {
+  pin(item: { text: string; source: string }): void;
+  recall(query: string): Promise<{ found: boolean; match?: string; context?: string }>;
+  getSession(): {
+    pinned: { id: string; text: string; source: string; ts: number }[];
+    commitments: string[];
+    decisions: string[];
+    entities: string[];
+  };
+  clearSession(): void;
+  addCommitment(text: string): void;
+  addDecision(text: string): void;
+  addEntity(name: string): void;
+}
+
 // ── Analyzer framework ──────────────────────────────────────────────
 
 export interface AnalyzerContext {
@@ -51,6 +71,7 @@ export interface AnalyzerContext {
   rollingText: string;
   enabledModules: EnabledModuleConfig[];
   recentOutputs: AnalyzerResult[];
+  memoryStore?: IMemoryStore;
   memorySummary?: MemorySummary;
   calendarContext?: CalendarContext;
   localContext?: LocalContext;

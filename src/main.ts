@@ -13,7 +13,6 @@ import {
   ContradictionAnalyzer,
   TopicShiftAnalyzer,
   StressCuesAnalyzer,
-  RecallAnalyzer,
 } from "./analyzers";
 import type { HudPayload, Verdict } from "./models/types";
 
@@ -110,18 +109,37 @@ function renderHud(payload: HudPayload): void {
     return;
   }
 
-  if (payload.mode === "ALERT") {
-    updateText("ERROR\n\n" + payload.line1.slice(0, 160));
-    return;
-  }
-
   if (payload.title === "CHECKING") {
     updateText("CHECKING...");
     return;
   }
 
-  // Fallback for other analyzer outputs
-  updateText("ERROR\n\n" + payload.line1.slice(0, 160));
+  if (payload.mode === "ALERT") {
+    // Full card for contradictions and errors — 8 seconds
+    const header = payload.title ?? "ALERT";
+    const body = wordWrap(payload.line1.slice(0, 160), 50);
+    updateText(`! ${header}\n\n${body}`);
+    return;
+  }
+
+  if (payload.mode === "PASSIVE") {
+    // Small one-line cue — 4 seconds, no disruption
+    const tag = payload.title ?? payload.sourceAnalyzer;
+    updateText(`${tag}: ${payload.line1.slice(0, 80)}`);
+    return;
+  }
+
+  if (payload.mode === "CARD") {
+    // Generic card for non-verdict results (recall, etc.)
+    const header = payload.title ?? "INFO";
+    const conf = payload.confidence ? ` - ${payload.confidence}` : "";
+    const body = wordWrap(payload.line1, 50);
+    updateText(`${header}${conf}\n\n${body}`);
+    return;
+  }
+
+  // Fallback
+  updateText(payload.line1.slice(0, 120));
 }
 
 // ── Deepgram (via proxy) ────────────────────────────────────────────
@@ -143,9 +161,20 @@ function connectDeepgram(): void {
     try {
       const data = JSON.parse(evt.data);
       if (!data?.is_final) return;
-      const text: string | undefined =
-        data?.channel?.alternatives?.[0]?.transcript;
-      if (text && text.trim()) orchestrator.handleTranscript(text.trim());
+      const alt = data?.channel?.alternatives?.[0];
+      const text: string | undefined = alt?.transcript;
+      if (text && text.trim()) {
+        const words: any[] | undefined = alt?.words;
+        const wordCount = words?.length;
+        const confidence: number | undefined = alt?.confidence;
+        let durationMs: number | undefined;
+        if (words && words.length >= 2) {
+          const start = words[0]?.start ?? 0;
+          const end = words[words.length - 1]?.end ?? start;
+          durationMs = Math.round((end - start) * 1000);
+        }
+        orchestrator.handleTranscript(text.trim(), { confidence, wordCount, durationMs });
+      }
     } catch { /* keepalive */ }
   };
 
@@ -185,7 +214,6 @@ async function main(): Promise<void> {
     new ContradictionAnalyzer(),
     new TopicShiftAnalyzer(),
     new StressCuesAnalyzer(),
-    new RecallAnalyzer(),
   ]);
   orchestrator.start();
 

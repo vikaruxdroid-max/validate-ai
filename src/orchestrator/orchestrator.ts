@@ -6,6 +6,8 @@ import type {
 } from "../models/types";
 import type { BaseAnalyzer } from "../analyzers/base";
 import { FactValidationAnalyzer } from "../analyzers/factValidation";
+import { RecallAnalyzer } from "../analyzers/recall";
+import { MemoryStore } from "../services/memoryStore";
 import { Scheduler } from "./scheduler";
 import { Prioritizer } from "./prioritizer";
 import { CooldownEngine } from "./cooldown";
@@ -16,20 +18,24 @@ export class Orchestrator {
   private scheduler = new Scheduler();
   private prioritizer = new Prioritizer();
   private cooldown = new CooldownEngine();
+  private memoryStore = new MemoryStore();
   private transcript: TranscriptSegment[] = [];
   private recentOutputs: AnalyzerResult[] = [];
   private sessionId: string;
   private onHud: (payload: HudPayload) => void;
   private passiveTimer: ReturnType<typeof setInterval> | null = null;
   private factValidation: FactValidationAnalyzer;
+  private recallAnalyzer: RecallAnalyzer;
 
   constructor(onHud: (payload: HudPayload) => void) {
     this.sessionId = crypto.randomUUID();
     this.onHud = onHud;
 
-    // Register the migrated fact-validation analyzer
+    // Register built-in active analyzers
     this.factValidation = new FactValidationAnalyzer();
+    this.recallAnalyzer = new RecallAnalyzer();
     this.scheduler.register(this.factValidation);
+    this.scheduler.register(this.recallAnalyzer);
   }
 
   /** Register additional analyzers (stubs or future implementations). */
@@ -52,9 +58,18 @@ export class Orchestrator {
   }
 
   /** Called when a new final transcript segment arrives from Deepgram. */
-  async handleTranscript(text: string): Promise<void> {
+  async handleTranscript(
+    text: string,
+    meta?: { confidence?: number; wordCount?: number; durationMs?: number },
+  ): Promise<void> {
     const now = Date.now();
-    this.transcript.push({ text, ts: now });
+    this.transcript.push({
+      text,
+      ts: now,
+      confidence: meta?.confidence,
+      wordCount: meta?.wordCount,
+      durationMs: meta?.durationMs,
+    });
     console.log("[STT]", text);
 
     // Prune segments older than buffer window
@@ -63,13 +78,22 @@ export class Orchestrator {
       this.transcript.shift();
     }
 
-    // Check for fact-validation trigger in the latest segment
-    if (this.cooldown.isInCooldown(this.factValidation.name)) return;
+    // Check for active analyzer triggers
+    if (!this.cooldown.isInCooldown(this.factValidation.name)) {
+      const factTrigger = this.factValidation.checkTrigger(text);
+      if (factTrigger) {
+        console.log("[Orchestrator] trigger matched:", factTrigger, "in:", text);
+        await this.runActiveAnalyzer(this.factValidation);
+        return;
+      }
+    }
 
-    const trigger = this.factValidation.checkTrigger(text);
-    if (trigger) {
-      console.log("[Orchestrator] trigger matched:", trigger, "in:", text);
-      await this.runActiveAnalyzer(this.factValidation);
+    if (!this.cooldown.isInCooldown(this.recallAnalyzer.name)) {
+      const recallTrigger = this.recallAnalyzer.checkTrigger(text);
+      if (recallTrigger) {
+        console.log("[Orchestrator] recall trigger matched:", recallTrigger, "in:", text);
+        await this.runActiveAnalyzer(this.recallAnalyzer);
+      }
     }
   }
 
@@ -82,6 +106,7 @@ export class Orchestrator {
       rollingText: this.transcript.map((s) => s.text).join(" "),
       enabledModules: [],
       recentOutputs: [...this.recentOutputs],
+      memoryStore: this.memoryStore,
       nowIso: new Date().toISOString(),
     };
   }

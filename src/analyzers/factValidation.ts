@@ -1,5 +1,7 @@
 import { BaseAnalyzer } from "./base";
 import { claudeRequest } from "../services/claude";
+import { FACT_EXTRACTION_SYSTEM } from "../prompts/haiku";
+import { FACT_VALIDATION_SYSTEM } from "../prompts/sonnet";
 import type {
   AnalyzerContext,
   AnalyzerResult,
@@ -96,15 +98,9 @@ export class FactValidationAnalyzer extends BaseAnalyzer {
   // ── Claude pipeline (migrated from main.ts) ──────────────────────
 
   private async extractClaim(recentText: string): Promise<string | null> {
-    const system =
-      "You are a fact-checking assistant. From this conversation transcript, " +
-      "identify the single most recent verifiable factual claim that could be " +
-      "true or false. Return ONLY the claim as a plain sentence. " +
-      "If no verifiable claim exists, return NONE.";
-
     const text = await claudeRequest(
       "claude-haiku-4-5-20251001",
-      system,
+      FACT_EXTRACTION_SYSTEM,
       recentText,
       undefined,
       128,
@@ -114,20 +110,9 @@ export class FactValidationAnalyzer extends BaseAnalyzer {
   }
 
   private async validateClaim(claim: string): Promise<ValidationResult> {
-    const system =
-      "You are a fact-checking assistant. Use web search to verify the claim " +
-      "against multiple sources. Respond with ONLY valid JSON:\n" +
-      '{"verdict":"SUPPORTED"|"PARTIAL"|"DISPUTED",' +
-      '"summary":"<one line, max 80 chars>",' +
-      '"confidence":"HIGH"|"MED"|"LOW"}\n' +
-      "SUPPORTED = well-supported by reliable sources\n" +
-      "PARTIAL = partly true but missing context\n" +
-      "DISPUTED = contradicted by reliable sources\n" +
-      "No text outside the JSON.";
-
     const text = await claudeRequest(
       "claude-sonnet-4-20250514",
-      system,
+      FACT_VALIDATION_SYSTEM,
       `Fact-check: "${claim}"`,
       [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
       256,
