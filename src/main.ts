@@ -276,12 +276,17 @@ async function claudeRequest(
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`Claude ${res.status}: ${errBody}`);
+    console.error("[Claude] HTTP", res.status, "body:", errBody);
+    throw new Error(`Claude ${res.status}: ${errBody.slice(0, 200)}`);
   }
 
   const json = await res.json();
+  console.log("[Claude] stop_reason:", json.stop_reason, "content blocks:", json.content?.length);
   const textBlock = json.content?.find((b: any) => b.type === "text");
-  if (!textBlock?.text) throw new Error("No text in Claude response");
+  if (!textBlock?.text) {
+    console.error("[Claude] no text block in response, content:", JSON.stringify(json.content?.map((b: any) => b.type)));
+    throw new Error("No text in Claude response");
+  }
   return textBlock.text;
 }
 
@@ -323,15 +328,40 @@ async function validateClaim(claim: string): Promise<ValidationResult> {
     256
   );
 
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("No JSON in validation response");
+  console.log("[Validate] raw Claude text:", text);
 
-  const parsed = JSON.parse(match[0]);
-  return {
-    verdict: parsed.verdict ?? "DISPUTED",
-    summary: parsed.summary ?? "Unable to determine",
-    confidence: parsed.confidence ?? "LOW",
-  };
+  // Try JSON parse first
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        verdict: parsed.verdict ?? "DISPUTED",
+        summary: parsed.summary ?? "Unable to determine",
+        confidence: parsed.confidence ?? "LOW",
+      };
+    } catch (e) {
+      console.warn("[Validate] JSON parse failed:", e);
+    }
+  }
+
+  // Fallback: extract verdict/summary from raw text via regex
+  console.log("[Validate] attempting regex fallback");
+  const verdictMatch = text.match(/\b(SUPPORTED|PARTIAL|DISPUTED)\b/i);
+  const summaryMatch = text.match(/summary[:\s]*["']?([^"'\n]{5,80})/i);
+  const confMatch = text.match(/\b(HIGH|MED|LOW)\b/i);
+
+  if (verdictMatch) {
+    return {
+      verdict: verdictMatch[1].toUpperCase() as Verdict,
+      summary: summaryMatch?.[1]?.trim() ?? text.slice(0, 80),
+      confidence: (confMatch?.[1]?.toUpperCase() as Confidence) ?? "LOW",
+    };
+  }
+
+  // Complete failure — show raw response on HUD
+  console.error("[Validate] could not parse response at all");
+  throw new Error("CHECK FAILED: " + text.slice(0, 80));
 }
 
 // ── Bootstrap ───────────────────────────────────────────────────────
