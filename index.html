@@ -250,6 +250,33 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
   border:1px solid var(--border);color:var(--muted);transition:all .12s}
 .qa-btn:active{background:var(--accent-muted);color:var(--accent);border-color:var(--accent-dim)}
 
+/* ══════════════ CONNECTIONS TIMELINE ══════════════ */
+.conn-view{display:none}.conn-view.show{display:block}
+.conn-entity-filter{display:flex;align-items:center;gap:8px;padding:8px 12px;
+  background:var(--surface);border:1px solid var(--accent-dim);border-radius:var(--radius-sm);
+  margin-bottom:var(--gap-sm);font:400 var(--fs-sm)/1 var(--mono);color:var(--accent)}
+.conn-entity-filter button{font:600 var(--fs-sm)/1 var(--mono);color:var(--danger);min-width:var(--tap);
+  min-height:32px;display:flex;align-items:center;justify-content:center}
+.date-hdr{font:700 var(--fs-sm)/1 var(--mono);color:var(--muted);letter-spacing:1px;
+  padding:var(--gap) 0 var(--gap-sm);text-transform:uppercase}
+.cluster{background:var(--surface);border-left:2px dashed var(--accent-dim);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:12px 12px 12px 14px;
+  margin-bottom:var(--gap-sm);margin-left:8px}
+.cluster-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.cluster-time{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim)}
+.cluster-topic{font:600 var(--fs-sm)/1 var(--sans);color:var(--accent-dim)}
+.cluster-entities{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.cluster-entity{font:700 10px/1 var(--mono);padding:3px 8px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--border);transition:all .12s}
+.cluster-entity:active{opacity:.6}
+.cluster-items{display:flex;flex-direction:column;gap:2px}
+.ci{display:flex;gap:8px;padding:8px;min-height:48px;border-radius:var(--radius-sm);
+  background:var(--surface-2);align-items:flex-start;cursor:pointer}
+.ci:active{opacity:.7}
+.ci-text{flex:1;font:400 var(--fs-sm)/1.3 var(--sans);color:var(--text);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ci-rel{display:block;font:400 10px/1 var(--mono);color:var(--dim);margin-top:4px;padding-left:8px}
+
 /* ══════════════ RESPONSIVE ══════════════ */
 @media(min-width:430px){
   .kpi{grid-template-columns:repeat(4,1fr)}
@@ -292,6 +319,7 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
     <div class="filters" id="filters"></div>
   </div>
   <div id="mlist"></div>
+  <div class="conn-view" id="conn-view"></div>
   <div class="empty" id="m-empty">No items yet</div>
 </div>
 
@@ -359,7 +387,7 @@ var QA=[
   {l:"STATS",p:"even stats"},{l:"HELP",p:"even help"}
 ];
 var FILTERS=[
-  {id:"all",l:"ALL"},{id:"commitment",l:"COMMITS"},{id:"decision",l:"DECISIONS"},
+  {id:"all",l:"ALL"},{id:"connections",l:"CONNECTIONS"},{id:"commitment",l:"COMMITS"},{id:"decision",l:"DECISIONS"},
   {id:"entity",l:"ENTITIES"},{id:"pinned",l:"PINNED"},{id:"contradiction",l:"CONFLICTS"}
 ];
 var TB={commitment:"b-commit",decision:"b-decision",entity:"b-entity",pinned:"b-pinned",contradiction:"b-contra"};
@@ -368,7 +396,7 @@ var CB={HIGH:"b-high",MED:"b-med",LOW:"b-low"};
 var MC={ALERT:"alert",CARD:"card-t",COMPACT:"card-t",PASSIVE:"passive"};
 
 /* ── STATE ── */
-var curFilter="all",searchQ="",lastVer=0,fired={};
+var curFilter="all",searchQ="",lastVer=0,fired={},connEntityFilter="";
 
 /* ── HELPERS ── */
 function esc(s){var d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
@@ -463,19 +491,21 @@ function rNow(S){
 
 /* ── RENDER: LIBRARY ── */
 function rLib(S){
+  var connView=document.getElementById("conn-view"),mL=document.getElementById("mlist"),mE=document.getElementById("m-empty");
+  if(curFilter==="connections"){mL.style.display="none";mE.style.display="none";connView.classList.add("show");rConn(S);return}
+  connView.classList.remove("show");mL.style.display="";
+
   var items=[];
   (S.commitments||[]).forEach(function(c){items.push({t:"commitment",text:c.text,owner:c.owner,due:c.dueDate,ts:c.ts,raw:c})});
   (S.decisions||[]).forEach(function(d){items.push({t:"decision",text:d,ts:0,raw:d})});
   (S.entities||[]).forEach(function(e){items.push({t:"entity",text:e.text,et:e.type,ctx:e.context,ts:e.ts,raw:e})});
   (S.pinned||[]).forEach(function(p){items.push({t:"pinned",text:p.text,src:p.source,ts:p.ts,raw:p})});
-  // Filter contradictions from pinned
   if(curFilter==="contradiction") items=items.filter(function(i){return i.t==="pinned"&&(i.src||"").indexOf("contradiction")!==-1});
   else if(curFilter!=="all") items=items.filter(function(i){return i.t===curFilter});
   if(searchQ) items=items.filter(function(i){return(i.text||"").toLowerCase().indexOf(searchQ)!==-1||(i.owner||"").toLowerCase().indexOf(searchQ)!==-1||(i.ctx||"").toLowerCase().indexOf(searchQ)!==-1});
   items.sort(function(a,b){return(b.ts||0)-(a.ts||0)});
 
   var eMsg={all:"No items yet",commitment:"No commitments yet",decision:"No decisions yet",entity:"No entities yet",pinned:"No pinned items yet",contradiction:"No contradictions yet"};
-  var mE=document.getElementById("m-empty"),mL=document.getElementById("mlist");
   mE.textContent=eMsg[curFilter]||"No items yet";
   if(!items.length){mL.innerHTML="";mE.style.display="";return}
   mE.style.display="none";
@@ -503,6 +533,126 @@ function rLib(S){
     if(it.ts)sh+='<div class="sheet-label">TIMESTAMP</div><div class="sheet-val">'+new Date(it.ts).toLocaleString()+'</div>';
     openDetail(sh);
   })});
+}
+
+/* ── RENDER: CONNECTIONS ── */
+function rConn(S){
+  var cv=document.getElementById("conn-view"),mE=document.getElementById("m-empty");
+  // Build flat artifact list with timestamps
+  var all=[];
+  (S.commitments||[]).forEach(function(c){all.push({t:"commitment",text:c.text,owner:c.owner,due:c.dueDate,ts:c.ts})});
+  (S.decisions||[]).forEach(function(d){all.push({t:"decision",text:d,ts:0})});
+  (S.entities||[]).forEach(function(e){all.push({t:"entity",text:e.text,et:e.type,ctx:e.context,ts:e.ts})});
+  (S.pinned||[]).forEach(function(p){all.push({t:"pinned",text:p.text,src:p.source,ts:p.ts})});
+  all=all.filter(function(a){return a.ts>0});
+  all.sort(function(a,b){return a.ts-b.ts});
+  if(!all.length){cv.innerHTML="";mE.style.display="";mE.textContent="Relationships appear as conversations develop.\nCommitments, decisions, and entities will be linked here automatically.";return}
+  mE.style.display="none";
+
+  // Extract entity names from all artifacts for linking
+  var entNames=[];
+  (S.entities||[]).forEach(function(e){if(e.text)entNames.push(e.text.toLowerCase())});
+  // Also add owners
+  (S.commitments||[]).forEach(function(c){if(c.owner)entNames.push(c.owner.toLowerCase())});
+  entNames=[].concat(Array.from(new Set(entNames)));
+
+  // Group into 10-minute clusters
+  var clusters=[],curCluster=null;
+  all.forEach(function(a){
+    if(!curCluster||a.ts-curCluster.end>600000){
+      curCluster={start:a.ts,end:a.ts,items:[a],entities:new Set()};clusters.push(curCluster);
+    }else{curCluster.items.push(a);curCluster.end=a.ts}
+    // Find shared entities in this item
+    var txt=(a.text||"").toLowerCase()+" "+(a.owner||"").toLowerCase()+" "+(a.ctx||"").toLowerCase();
+    entNames.forEach(function(en){if(txt.indexOf(en)!==-1)curCluster.entities.add(en)});
+  });
+
+  // Apply entity filter
+  if(connEntityFilter){
+    var lf=connEntityFilter.toLowerCase();
+    clusters=clusters.filter(function(c){return c.entities.has(lf)});
+  }
+
+  // Group clusters by date
+  var dateGroups={};
+  clusters.forEach(function(c){
+    var d=new Date(c.start),today=new Date(),yest=new Date(today);yest.setDate(yest.getDate()-1);
+    var key;
+    if(d.toDateString()===today.toDateString()) key="TODAY";
+    else if(d.toDateString()===yest.toDateString()) key="YESTERDAY";
+    else key=d.toLocaleDateString(undefined,{month:"short",day:"numeric"});
+    if(!dateGroups[key])dateGroups[key]=[];
+    dateGroups[key].push(c);
+  });
+
+  // Entity badge color map
+  var entBadge=function(name){
+    var e=(S.entities||[]).find(function(x){return x.text&&x.text.toLowerCase()===name.toLowerCase()});
+    if(!e)return"b-entity";return EB[e.type]||"b-entity";
+  };
+
+  var h="";
+  // Entity filter indicator
+  if(connEntityFilter){
+    h+='<div class="conn-entity-filter">Showing: '+esc(connEntityFilter)+'<button id="conn-clear-entity">&times;</button></div>';
+  }
+
+  var keys=Object.keys(dateGroups);
+  if(!keys.length){cv.innerHTML="";mE.style.display="";mE.textContent="No connections found"+(connEntityFilter?" for "+connEntityFilter:"");return}
+
+  keys.forEach(function(dk){
+    h+='<div class="date-hdr">'+esc(dk)+'</div>';
+    dateGroups[dk].forEach(function(c){
+      var t0=new Date(c.start),t1=new Date(c.end);
+      var timeRange=t0.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+      if(c.end-c.start>60000) timeRange+=" \u2013 "+t1.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+
+      // Detect dominant topic from first commitment or decision
+      var topic="";
+      for(var ti=0;ti<c.items.length;ti++){if(c.items[ti].t==="commitment"||c.items[ti].t==="decision"){topic=c.items[ti].text.slice(0,40);break}}
+
+      h+='<div class="cluster"><div class="cluster-hdr"><span class="cluster-time">'+esc(timeRange)+'</span>';
+      if(topic)h+='<span class="cluster-topic">'+esc(topic)+'</span>';
+      h+='</div>';
+
+      // Entity pills
+      if(c.entities.size>0){
+        h+='<div class="cluster-entities">';
+        c.entities.forEach(function(en){h+='<button class="cluster-entity '+entBadge(en)+'" data-entity="'+esc(en)+'">'+esc(en)+'</button>'});
+        h+='</div>';
+      }
+
+      // Items with relationship labels
+      h+='<div class="cluster-items">';
+      var prev=null;
+      c.items.forEach(function(it){
+        var badge=it.t==="entity"?(EB[it.et]||"b-entity"):(TB[it.t]||"b-entity");
+        var label=it.t==="entity"?(it.et||"ENTITY"):it.t.toUpperCase();
+        // Relationship label between items
+        if(prev){
+          var rl="";
+          if(prev.t==="decision"&&it.t==="commitment") rl="followed by";
+          else if(prev.t==="commitment"&&it.t==="decision") rl="led to";
+          else if(it.t==="pinned"&&(it.src||"").indexOf("contradiction")!==-1) rl="contradicts";
+          else rl="related to";
+          h+='<span class="ci-rel">\u2514 '+rl+'</span>';
+        }
+        h+='<div class="ci"><span class="b '+badge+'">'+label+'</span><div class="ci-text">'+esc(it.text)+'</div></div>';
+        prev=it;
+      });
+      h+='</div></div>';
+    });
+  });
+
+  cv.innerHTML=h;
+
+  // Entity pivot click handlers
+  cv.querySelectorAll(".cluster-entity").forEach(function(el){
+    el.addEventListener("click",function(){connEntityFilter=el.dataset.entity||"";});
+  });
+  // Clear entity filter
+  var clearBtn=document.getElementById("conn-clear-entity");
+  if(clearBtn)clearBtn.addEventListener("click",function(){connEntityFilter="";});
 }
 
 /* ── RENDER: CONTROL ── */

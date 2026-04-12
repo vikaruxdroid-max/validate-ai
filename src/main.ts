@@ -21,14 +21,8 @@ import type { HudPayload, Verdict } from "./models/types";
 // ── Config ──────────────────────────────────────────────────────────
 const DISPLAY_W = 576;
 const DISPLAY_H = 288;
-const MAIN_H = 216; // top 3/4
-const PASSIVE_Y = 216; // bottom 1/4
-const PASSIVE_H = 72;
-
-// ── Container IDs ───────────────────────────────────────────────────
 const ID_MAIN = 1;
 const ID_LIST = 2;
-const ID_PASSIVE = 3;
 
 // ── State ───────────────────────────────────────────────────────────
 let bridge: EvenAppBridge;
@@ -37,11 +31,11 @@ let dgReady = false;
 const dgPendingBuffer: Uint8Array[] = [];
 let listDismissTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-let heartbeatTick = false;
-let passiveCueTimer: ReturnType<typeof setTimeout> | null = null;
+let heartbeatStep = 0; // 0="L." 1="L.." 2="L..."
 let isListening = true;
+let orchestrator: Orchestrator;
 
-// ── Display ─────────────────────────────────────────────────────────
+// ── Display helpers ─────────────────────────────────────────────────
 
 async function updateText(content: string): Promise<void> {
   const upgrade = new TextContainerUpgrade();
@@ -50,50 +44,27 @@ async function updateText(content: string): Promise<void> {
   await bridge.textContainerUpgrade(upgrade);
 }
 
-async function updatePassive(content: string): Promise<void> {
-  const upgrade = new TextContainerUpgrade();
-  upgrade.containerID = ID_PASSIVE;
-  upgrade.content = content;
-  await bridge.textContainerUpgrade(upgrade);
-}
-
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function makeTextContainers(mainContent: string): TextContainerProperty[] {
-  return [
-    new TextContainerProperty({
-      containerID: ID_MAIN,
-      xPosition: 0,
-      yPosition: 0,
-      width: DISPLAY_W,
-      height: MAIN_H,
-      borderWidth: 0,
-      borderRadius: 0,
-      paddingLength: 4,
-      isEventCapture: 1,
-      content: mainContent,
-    }),
-    new TextContainerProperty({
-      containerID: ID_PASSIVE,
-      xPosition: 0,
-      yPosition: PASSIVE_Y,
-      width: DISPLAY_W,
-      height: PASSIVE_H,
-      borderWidth: 0,
-      borderRadius: 0,
-      paddingLength: 4,
-      isEventCapture: 0,
-      content: "",
-    }),
-  ];
-}
-
 async function initDisplay(): Promise<void> {
   const container = {
-    containerTotalNum: 2,
-    textObject: makeTextContainers("L..."),
+    containerTotalNum: 1,
+    textObject: [
+      new TextContainerProperty({
+        containerID: ID_MAIN,
+        xPosition: 0,
+        yPosition: 0,
+        width: DISPLAY_W,
+        height: DISPLAY_H,
+        borderWidth: 0,
+        borderRadius: 0,
+        paddingLength: 4,
+        isEventCapture: 1,
+        content: "L.",
+      }),
+    ],
   };
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -127,24 +98,20 @@ const VERDICT_ICON: Record<Verdict, string> = {
   DISPUTED: "\u2717",
 };
 
-// ── Heartbeat ───────────────────────────────────────────────────────
+const HEARTBEAT_FRAMES = ["L.", "L..", "L..."];
 
-let orchestrator: Orchestrator;
-
-function getListeningText(): string {
-  const dots = heartbeatTick ? "L..." : "L";
-  const badge = orchestrator?.getAnalyzerBadge?.() ?? "";
-  return badge ? `${dots}\n${badge}` : dots;
-}
+// ── Heartbeat: L. → L.. → L... → L. (600ms per step) ──────────────
 
 function startHeartbeat(): void {
   stopHeartbeat();
   isListening = true;
+  heartbeatStep = 0;
+  updateText(HEARTBEAT_FRAMES[0]);
   heartbeatTimer = setInterval(() => {
     if (!isListening) return;
-    heartbeatTick = !heartbeatTick;
-    updateText(getListeningText());
-  }, 3000);
+    heartbeatStep = (heartbeatStep + 1) % 3;
+    updateText(HEARTBEAT_FRAMES[heartbeatStep]);
+  }, 600);
 }
 
 function stopHeartbeat(): void {
@@ -155,7 +122,7 @@ function stopHeartbeat(): void {
   isListening = false;
 }
 
-// ── List Container display ──────────────────────────────────────────
+// ── List Container ──────────────────────────────────────────────────
 
 async function showListContainer(items: string[]): Promise<void> {
   stopHeartbeat();
@@ -191,45 +158,41 @@ async function restoreTextContainer(): Promise<void> {
   }
 
   await bridge.rebuildPageContainer({
-    containerTotalNum: 2,
-    textObject: makeTextContainers(getListeningText()),
+    containerTotalNum: 1,
+    textObject: [
+      new TextContainerProperty({
+        containerID: ID_MAIN,
+        xPosition: 0,
+        yPosition: 0,
+        width: DISPLAY_W,
+        height: DISPLAY_H,
+        borderWidth: 0,
+        borderRadius: 0,
+        paddingLength: 4,
+        isEventCapture: 1,
+        content: "L.",
+      }),
+    ],
   });
   startHeartbeat();
   console.log("[Display] text container restored");
 }
 
-// ── Passive cue helper ──────────────────────────────────────────────
-
-function showPassiveCue(text: string, ttlMs: number): void {
-  if (passiveCueTimer) clearTimeout(passiveCueTimer);
-  updatePassive(text);
-  passiveCueTimer = setTimeout(() => {
-    updatePassive("");
-    passiveCueTimer = null;
-  }, ttlMs);
-}
-
-// ── HUD rendering (maps HudPayload → display text) ─────────────────
+// ── HUD rendering ───────────────────────────────────────────────────
 
 function renderHud(payload: HudPayload): void {
   if (payload.mode === "LISTENING") {
-    stopHeartbeat();
-    heartbeatTick = true;
-    updateText(getListeningText());
-    updatePassive("");
     startHeartbeat();
     return;
   }
 
   if (payload.mode === "LIST" && payload.listItems) {
     showListContainer(payload.listItems);
-    listDismissTimer = setTimeout(() => {
-      restoreTextContainer();
-    }, payload.ttlMs || 30_000);
+    listDismissTimer = setTimeout(() => restoreTextContainer(), payload.ttlMs || 5000);
     return;
   }
 
-  // Any non-LISTENING, non-LIST mode stops heartbeat
+  // All other modes: stop heartbeat, show content
   stopHeartbeat();
 
   if (payload.verdict && payload.verdict in VERDICT_ICON) {
@@ -254,9 +217,8 @@ function renderHud(payload: HudPayload): void {
   }
 
   if (payload.mode === "PASSIVE") {
-    // Render in bottom quarter only — no disruption to main content
     const tag = payload.title ?? payload.sourceAnalyzer;
-    showPassiveCue(`${tag}: ${payload.line1.slice(0, 60)}`, payload.ttlMs || 4000);
+    updateText(`${tag}: ${payload.line1.slice(0, 60)}`);
     return;
   }
 
@@ -331,7 +293,6 @@ async function main(): Promise<void> {
 
   await initDisplay();
 
-  // Initialize orchestrator with HUD callback
   orchestrator = new Orchestrator(renderHud);
   orchestrator.registerAnalyzers([
     new CommitmentsAnalyzer(),
@@ -347,15 +308,12 @@ async function main(): Promise<void> {
   // Launch greeting
   if (memoryItemCount > 0) {
     updateText(`WELCOME BACK\n\n${memoryItemCount} items in memory`);
-    await delay(4000);
+    await delay(3000);
   } else {
     updateText("R");
     await delay(2000);
   }
 
-  // Transition to listening with heartbeat
-  heartbeatTick = true;
-  updateText(getListeningText());
   startHeartbeat();
 
   const micOk = await bridge.audioControl(true);
@@ -403,7 +361,7 @@ async function main(): Promise<void> {
   updatePhoneState();
   setInterval(updatePhoneState, 250);
 
-  // ── HUD watchdog: force LISTENING if stuck past TTL ─────────────
+  // ── HUD watchdog: force L. if stuck past 6 seconds ────────────────
   let lastHudChangeTs = Date.now();
   const originalRenderHud = renderHud;
   renderHud = function watchdogRenderHud(payload: HudPayload) {
@@ -411,16 +369,12 @@ async function main(): Promise<void> {
     originalRenderHud(payload);
   };
   setInterval(() => {
-    if (!isListening && Date.now() - lastHudChangeTs > 15_000) {
-      console.warn("[Watchdog] HUD stuck, forcing LISTENING");
-      stopHeartbeat();
-      heartbeatTick = true;
-      updateText(getListeningText());
-      updatePassive("");
+    if (!isListening && Date.now() - lastHudChangeTs > 6000) {
+      console.warn("[Watchdog] HUD stuck, forcing L.");
       startHeartbeat();
       lastHudChangeTs = Date.now();
     }
-  }, 5000);
+  }, 3000);
 
   // Listen for trigger events from phone UI
   window.addEventListener("validateai-trigger", ((e: CustomEvent) => {

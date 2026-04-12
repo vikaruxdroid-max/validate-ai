@@ -300,7 +300,7 @@ export class Orchestrator {
       title: `${items.length} COMMITMENTS`,
       line1: "",
       listItems: items,
-      ttlMs: 30_000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
   }
@@ -327,7 +327,7 @@ export class Orchestrator {
       title: `${items.length} DECISIONS`,
       line1: "",
       listItems: items,
-      ttlMs: 30_000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
   }
@@ -354,7 +354,7 @@ export class Orchestrator {
       mode: "CARD",
       title: "CHECKING",
       line1: "C...",
-      ttlMs: 30_000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
 
@@ -382,10 +382,10 @@ export class Orchestrator {
         mode: "CARD",
         title: "WHY",
         line1: explanation.trim().slice(0, 200),
-        ttlMs: 15_000,
+        ttlMs: 5000,
         sourceAnalyzer: "system",
       });
-      setTimeout(() => this.emitListening(), 15_000);
+      setTimeout(() => this.emitListening(), 5000);
     } catch (err: any) {
       console.error("[ExplainWhy] error:", err);
       this.onHud({
@@ -411,11 +411,11 @@ export class Orchestrator {
       mode: "CARD",
       title: "SESSION",
       line1: statsLine,
-      ttlMs: 6000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
 
-    // After 6 seconds, show Card 2: Haiku summary
+    // After 5 seconds, show Card 2: Haiku summary
     setTimeout(async () => {
       try {
         const fullStats =
@@ -438,15 +438,15 @@ export class Orchestrator {
           mode: "CARD",
           title: "SUMMARY",
           line1: summary.trim().slice(0, 160),
-          ttlMs: 8000,
+          ttlMs: 5000,
           sourceAnalyzer: "system",
         });
-        setTimeout(() => this.emitListening(), 8000);
+        setTimeout(() => this.emitListening(), 5000);
       } catch (err) {
         console.warn("[SessionSummary] Haiku error:", err);
         this.emitListening();
       }
-    }, 6000);
+    }, 5000);
   }
 
   private handleSessionStats(): void {
@@ -460,10 +460,10 @@ export class Orchestrator {
       title: "STATS",
       line1: l1,
       line2: l2,
-      ttlMs: 8000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
-    setTimeout(() => this.emitListening(), 8000);
+    setTimeout(() => this.emitListening(), 5000);
   }
 
   private async handleForget(): Promise<void> {
@@ -475,10 +475,10 @@ export class Orchestrator {
       mode: "PASSIVE",
       title: "MEMORY CLEARED",
       line1: "MEMORY CLEARED",
-      ttlMs: 3000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
-    setTimeout(() => this.emitListening(), 3000);
+    setTimeout(() => this.emitListening(), 5000);
   }
 
   private handleToggle(analyzerKey: string): void {
@@ -502,10 +502,10 @@ export class Orchestrator {
       mode: "PASSIVE",
       title: `${analyzerKey.toUpperCase()}: ${state}`,
       line1: `${analyzerKey.toUpperCase()}: ${state}`,
-      ttlMs: 3000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
-    setTimeout(() => this.emitListening(), 3000);
+    setTimeout(() => this.emitListening(), 5000);
   }
 
   private handleStatus(): void {
@@ -521,7 +521,7 @@ export class Orchestrator {
       title: "ANALYZER STATUS",
       line1: "",
       listItems: items.slice(0, 20),
-      ttlMs: 15_000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
   }
@@ -532,7 +532,7 @@ export class Orchestrator {
       title: "COMMANDS",
       line1: "",
       listItems: HELP_ITEMS,
-      ttlMs: 20_000,
+      ttlMs: 5000,
       sourceAnalyzer: "system",
     });
   }
@@ -606,7 +606,7 @@ export class Orchestrator {
       mode: "CARD",
       title: "CHECKING",
       line1: "C...",
-      ttlMs: 30_000,
+      ttlMs: 5000,
       sourceAnalyzer: analyzer.name,
     });
 
@@ -678,7 +678,7 @@ export class Orchestrator {
     const payload = this.toHudPayload(result);
     this.onHud(payload);
 
-    const ttl = result.expiresInMs ?? 10_000;
+    const ttl = result.expiresInMs ?? 5000;
     setTimeout(() => {
       if (this.prioritizer.getActive()?.analyzer === result.analyzer) {
         this.prioritizer.clear();
@@ -706,7 +706,7 @@ export class Orchestrator {
       confidence: result.confidence,
       line1: result.summary,
       line2,
-      ttlMs: result.expiresInMs ?? 10_000,
+      ttlMs: result.expiresInMs ?? 5000,
       sourceAnalyzer: result.analyzer,
     };
   }
