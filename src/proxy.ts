@@ -11,8 +11,8 @@ if (!DG_KEY) {
 
 console.log("[proxy] key length:", DG_KEY.length, "first 8:", DG_KEY.slice(0, 8));
 
-const wss = new WebSocketServer({ port: PORT });
-console.log(`[proxy] listening on ws://localhost:${PORT}`);
+const wss = new WebSocketServer({ host: "0.0.0.0", port: PORT });
+console.log(`[proxy] listening on ws://0.0.0.0:${PORT}`);
 
 wss.on("connection", (browser) => {
   console.log("[proxy] browser connected, opening Deepgram upstream");
