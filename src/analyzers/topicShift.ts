@@ -11,7 +11,7 @@ export class TopicShiftAnalyzer extends BaseAnalyzer {
   readonly priority = 30;
   readonly schedule = "passive" as const;
   readonly intervalMs = 3000;
-  readonly defaultCooldownMs = 10_000;
+  readonly defaultCooldownMs = 20_000;
 
   private lastAnalyzedLength = 0;
 
@@ -62,11 +62,18 @@ export class TopicShiftAnalyzer extends BaseAnalyzer {
       if (!parsed.shifted) return this.noTrigger();
 
       const confidence = (parsed.confidence ?? "LOW") as Confidence;
-      const topic = parsed.newTopic ?? "new topic";
+      // Only surface MED+ confidence shifts
+      if (confidence === "LOW") return this.noTrigger();
+
+      const topic: string = parsed.newTopic ?? "";
+      // Skip if topic is empty or too short
+      if (topic.trim().length < 3) return this.noTrigger();
+
+      console.log("[TopicShift] detected:", topic, "confidence:", confidence);
 
       return this.result({
         confidence,
-        title: "TOPIC SHIFT",
+        title: `TOPIC: ${topic.slice(0, 40)}`,
         summary: topic,
         suggestedHudMode: "PASSIVE",
         expiresInMs: 4000,

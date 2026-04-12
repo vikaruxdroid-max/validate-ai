@@ -8,17 +8,31 @@ import type { BaseAnalyzer } from "../analyzers/base";
 import { FactValidationAnalyzer } from "../analyzers/factValidation";
 import { RecallAnalyzer } from "../analyzers/recall";
 import { MemoryStore } from "../services/memoryStore";
+import { claudeRequest } from "../services/claude";
+import { EXPLAIN_WHY_SYSTEM } from "../prompts/sonnet";
+import { SESSION_SUMMARY_SYSTEM } from "../prompts/haiku";
 import { Scheduler } from "./scheduler";
 import { Prioritizer } from "./prioritizer";
 import { CooldownEngine } from "./cooldown";
 
 const BUFFER_SECONDS = 90;
 
+// ── Trigger phrase tables ───────────────────────────────────────────
+
 const COMMITMENTS_LIST_TRIGGERS = [
-  "even commitments",
-  "even commitment",
-  "even commit list",
-  "list commitments",
+  "even commitments", "even commitment", "even commit list", "list commitments",
+];
+
+const DECISIONS_LIST_TRIGGERS = [
+  "even decisions", "even decision", "list decisions", "even decide",
+];
+
+const EXPLAIN_WHY_TRIGGERS = [
+  "even why", "even y", "even wire", "even wise",
+];
+
+const SUMMARY_TRIGGERS = [
+  "even summary", "even sum", "even summarize", "summary",
 ];
 
 function normalize(text: string): string {
@@ -29,13 +43,15 @@ function normalize(text: string): string {
     .trim();
 }
 
-function detectCommitmentsTrigger(text: string): string | null {
+function detectTriggerFrom(text: string, triggers: string[]): string | null {
   const clean = normalize(text);
-  for (const t of COMMITMENTS_LIST_TRIGGERS) {
+  for (const t of triggers) {
     if (clean.includes(t)) return t;
   }
   return null;
 }
+
+// ── Orchestrator ────────────────────────────────────────────────────
 
 export class Orchestrator {
   private scheduler = new Scheduler();
@@ -44,6 +60,8 @@ export class Orchestrator {
   private memoryStore = new MemoryStore();
   private transcript: TranscriptSegment[] = [];
   private recentOutputs: AnalyzerResult[] = [];
+  private factsCheckedCount = 0;
+  private contradictionsCount = 0;
   private sessionId: string;
   private onHud: (payload: HudPayload) => void;
   private passiveTimer: ReturnType<typeof setInterval> | null = null;
@@ -101,7 +119,7 @@ export class Orchestrator {
       this.transcript.shift();
     }
 
-    // Check for active analyzer triggers
+    // ── Active analyzer triggers ────────────────────────────────────
     if (!this.cooldown.isInCooldown(this.factValidation.name)) {
       const factTrigger = this.factValidation.checkTrigger(text);
       if (factTrigger) {
@@ -114,19 +132,38 @@ export class Orchestrator {
     if (!this.cooldown.isInCooldown(this.recallAnalyzer.name)) {
       const recallTrigger = this.recallAnalyzer.checkTrigger(text);
       if (recallTrigger) {
-        console.log("[Orchestrator] recall trigger matched:", recallTrigger, "in:", text);
+        console.log("[Orchestrator] recall trigger:", recallTrigger);
         await this.runActiveAnalyzer(this.recallAnalyzer);
         return;
       }
     }
 
-    // Check for commitments list trigger
-    const commitTrigger = detectCommitmentsTrigger(text);
-    if (commitTrigger) {
-      console.log("[Orchestrator] commitments list trigger:", commitTrigger);
+    // ── Direct triggers (no analyzer, handled inline) ───────────────
+    if (detectTriggerFrom(text, EXPLAIN_WHY_TRIGGERS)) {
+      console.log("[Orchestrator] explain-why trigger");
+      await this.handleExplainWhy();
+      return;
+    }
+
+    if (detectTriggerFrom(text, COMMITMENTS_LIST_TRIGGERS)) {
+      console.log("[Orchestrator] commitments-list trigger");
       this.showCommitmentsList();
+      return;
+    }
+
+    if (detectTriggerFrom(text, DECISIONS_LIST_TRIGGERS)) {
+      console.log("[Orchestrator] decisions-list trigger");
+      this.showDecisionsList();
+      return;
+    }
+
+    if (detectTriggerFrom(text, SUMMARY_TRIGGERS)) {
+      console.log("[Orchestrator] session-summary trigger");
+      await this.handleSessionSummary();
     }
   }
+
+  // ── Inline trigger handlers ───────────────────────────────────────
 
   private showCommitmentsList(): void {
     const commitments = this.memoryStore.getCommitments();
@@ -143,7 +180,6 @@ export class Orchestrator {
       return;
     }
 
-    // Format each commitment as a list item, truncated to 64 chars
     const items = commitments.map((c) => {
       const parts = [c.text];
       if (c.owner) parts.push(`(${c.owner})`);
@@ -161,6 +197,150 @@ export class Orchestrator {
     });
   }
 
+  private showDecisionsList(): void {
+    const decisions = this.memoryStore.getDecisions();
+
+    if (decisions.length === 0) {
+      this.onHud({
+        mode: "CARD",
+        title: "DECISIONS",
+        line1: "NO DECISIONS YET",
+        ttlMs: 5000,
+        sourceAnalyzer: "system",
+      });
+      setTimeout(() => this.emitListening(), 5000);
+      return;
+    }
+
+    const items = decisions.map((d) => d.slice(0, 64));
+
+    this.onHud({
+      mode: "LIST",
+      title: `${items.length} DECISIONS`,
+      line1: "",
+      listItems: items,
+      ttlMs: 30_000,
+      sourceAnalyzer: "system",
+    });
+  }
+
+  private async handleExplainWhy(): Promise<void> {
+    // Find the last fact validation result in recentOutputs
+    const lastFact = [...this.recentOutputs]
+      .reverse()
+      .find((r) => r.analyzer === "factValidation" && r.triggered);
+
+    if (!lastFact || !lastFact.details?.verdict) {
+      this.onHud({
+        mode: "CARD",
+        title: "WHY",
+        line1: "NO RECENT CHECK",
+        ttlMs: 5000,
+        sourceAnalyzer: "system",
+      });
+      setTimeout(() => this.emitListening(), 5000);
+      return;
+    }
+
+    this.onHud({
+      mode: "CARD",
+      title: "CHECKING",
+      line1: "CHECKING...",
+      ttlMs: 30_000,
+      sourceAnalyzer: "system",
+    });
+
+    try {
+      const verdict = lastFact.details.verdict as string;
+      const claim = lastFact.details.claim as string;
+      const summary = lastFact.summary;
+
+      const userMsg =
+        `Claim: "${claim}"\n` +
+        `Verdict: ${verdict}\n` +
+        `Summary: ${summary}`;
+
+      const explanation = await claudeRequest(
+        "claude-sonnet-4-20250514",
+        EXPLAIN_WHY_SYSTEM,
+        userMsg,
+        undefined,
+        256,
+      );
+
+      console.log("[ExplainWhy] response:", explanation);
+
+      this.onHud({
+        mode: "CARD",
+        title: "WHY",
+        line1: explanation.trim().slice(0, 200),
+        ttlMs: 15_000,
+        sourceAnalyzer: "system",
+      });
+      setTimeout(() => this.emitListening(), 15_000);
+    } catch (err: any) {
+      console.error("[ExplainWhy] error:", err);
+      this.onHud({
+        mode: "ALERT",
+        title: "ERROR",
+        line1: err?.message ?? "Explain failed",
+        ttlMs: 5000,
+        sourceAnalyzer: "system",
+      });
+      setTimeout(() => this.emitListening(), 5000);
+    }
+  }
+
+  private async handleSessionSummary(): Promise<void> {
+    const session = this.memoryStore.getSession();
+    const commitsCount = session.commitments.length;
+    const decisionsCount = session.decisions.length;
+
+    const statsLine = `${this.factsCheckedCount} facts \u00b7 ${commitsCount} commits \u00b7 ${decisionsCount} decisions`;
+
+    // Card 1: stats
+    this.onHud({
+      mode: "CARD",
+      title: "SESSION",
+      line1: statsLine,
+      ttlMs: 6000,
+      sourceAnalyzer: "system",
+    });
+
+    // After 6 seconds, show Card 2: Haiku summary
+    setTimeout(async () => {
+      try {
+        const fullStats =
+          `Facts checked: ${this.factsCheckedCount}, ` +
+          `Commitments: ${commitsCount}, ` +
+          `Decisions: ${decisionsCount}, ` +
+          `Contradictions: ${this.contradictionsCount}`;
+
+        const summary = await claudeRequest(
+          "claude-haiku-4-5-20251001",
+          SESSION_SUMMARY_SYSTEM,
+          fullStats,
+          undefined,
+          96,
+        );
+
+        console.log("[SessionSummary] response:", summary);
+
+        this.onHud({
+          mode: "CARD",
+          title: "SUMMARY",
+          line1: summary.trim().slice(0, 160),
+          ttlMs: 8000,
+          sourceAnalyzer: "system",
+        });
+        setTimeout(() => this.emitListening(), 8000);
+      } catch (err) {
+        console.warn("[SessionSummary] Haiku error:", err);
+        this.emitListening();
+      }
+    }, 6000);
+  }
+
   // ── Internal ──────────────────────────────────────────────────────
 
   private buildContext(): AnalyzerContext {
@@ -176,10 +356,8 @@ export class Orchestrator {
   }
 
   private async runActiveAnalyzer(analyzer: BaseAnalyzer): Promise<void> {
-    // Set cooldown immediately to prevent re-trigger during async work
     this.cooldown.setCooldown(analyzer.name, analyzer.defaultCooldownMs);
 
-    // Show "checking" state on HUD
     this.onHud({
       mode: "CARD",
       title: "CHECKING",
@@ -232,6 +410,14 @@ export class Orchestrator {
     this.recentOutputs.push(result);
     if (this.recentOutputs.length > 20) this.recentOutputs.shift();
 
+    // Track stats for session summary
+    if (result.analyzer === "factValidation" && result.triggered) {
+      this.factsCheckedCount++;
+    }
+    if (result.analyzer === "contradiction" && result.triggered) {
+      this.contradictionsCount++;
+    }
+
     if (!result.triggered) return;
 
     if (!this.prioritizer.shouldDisplay(result)) {
@@ -247,7 +433,6 @@ export class Orchestrator {
     const payload = this.toHudPayload(result);
     this.onHud(payload);
 
-    // Return to listening after result expires
     const ttl = result.expiresInMs ?? 10_000;
     setTimeout(() => {
       if (this.prioritizer.getActive()?.analyzer === result.analyzer) {
@@ -259,8 +444,13 @@ export class Orchestrator {
 
   private toHudPayload(result: AnalyzerResult): HudPayload {
     const verdict = result.details?.verdict as string | undefined;
-    // If summary contains newlines, treat as pre-formatted body (line2)
     const hasNewlines = result.summary.includes("\n");
+    const prior = result.details?.prior as string | undefined;
+    const line2 = prior
+      ? `Was: ${prior}`
+      : hasNewlines
+        ? result.summary
+        : undefined;
     return {
       mode:
         result.suggestedHudMode === "COMPACT"
@@ -270,7 +460,7 @@ export class Orchestrator {
       verdict,
       confidence: result.confidence,
       line1: result.summary,
-      line2: hasNewlines ? result.summary : undefined,
+      line2,
       ttlMs: result.expiresInMs ?? 10_000,
       sourceAnalyzer: result.analyzer,
     };

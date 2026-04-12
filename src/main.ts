@@ -185,8 +185,9 @@ function renderHud(payload: HudPayload): void {
   if (payload.mode === "ALERT") {
     // Full card for contradictions and errors — 8 seconds
     const header = payload.title ?? "ALERT";
-    const body = wordWrap(payload.line1.slice(0, 160), 50);
-    updateText(`! ${header}\n\n${body}`);
+    const now = wordWrap(payload.line1.slice(0, 100), 50);
+    const prior = payload.line2 ? "\n" + wordWrap(payload.line2.slice(0, 100), 50) : "";
+    updateText(`! ${header}\n\n${now}${prior}`);
     return;
   }
 

@@ -78,6 +78,10 @@ export class MemoryStore implements IMemoryStore {
     return [...this.commitments];
   }
 
+  getDecisions(): string[] {
+    return [...this.decisions];
+  }
+
   clearSession(): void {
     this.pinned = [];
     this.commitments = [];

@@ -11,7 +11,7 @@ export class ContradictionAnalyzer extends BaseAnalyzer {
   readonly priority = 70;
   readonly schedule = "passive" as const;
   readonly intervalMs = 5000;
-  readonly defaultCooldownMs = 20_000;
+  readonly defaultCooldownMs = 30_000;
 
   private lastAnalyzedLength = 0;
 
@@ -22,14 +22,14 @@ export class ContradictionAnalyzer extends BaseAnalyzer {
 
     const now = Date.now();
 
-    // RECENT: last 15 seconds
-    const recentCutoff = now - 15_000;
+    // RECENT: last 10 seconds
+    const recentCutoff = now - 10_000;
     const recentText = ctx.transcriptWindow
       .filter((s) => s.ts >= recentCutoff)
       .map((s) => s.text)
       .join(" ");
 
-    // PRIOR: everything before that (up to 90s buffer)
+    // PRIOR: 10-90 seconds ago (80 second window)
     const priorText = ctx.transcriptWindow
       .filter((s) => s.ts < recentCutoff)
       .map((s) => s.text)
@@ -61,8 +61,17 @@ export class ContradictionAnalyzer extends BaseAnalyzer {
       if (!parsed.found) return this.noTrigger();
 
       const confidence = (parsed.confidence ?? "LOW") as Confidence;
-      // Only surface HIGH confidence contradictions
       if (confidence !== "HIGH") return this.noTrigger();
+
+      // Store contradiction in memory for session recall
+      if (ctx.memoryStore) {
+        ctx.memoryStore.pin({
+          text: `Contradiction: "${parsed.current}" vs "${parsed.prior}"`,
+          source: "contradiction",
+        });
+      }
+
+      console.log("[Contradiction] found:", parsed.current, "vs", parsed.prior);
 
       return this.result({
         confidence,

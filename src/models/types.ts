@@ -65,6 +65,7 @@ export interface IMemoryStore {
     entities: string[];
   };
   getCommitments(): CommitmentEntry[];
+  getDecisions(): string[];
   clearSession(): void;
   addCommitment(entry: { text: string; owner?: string; dueDate?: string }): void;
   addDecision(text: string): void;
