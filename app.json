@@ -1,0 +1,8 @@
+{
+  "name": "ValidateAI",
+  "version": "1.0.0",
+  "description": "Real-time fact-checking via voice. Say 'hey even validate' to verify the last statement heard.",
+  "author": "carlo",
+  "icon": "icon.png",
+  "entry": "index.html"
+}
