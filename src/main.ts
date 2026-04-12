@@ -4,29 +4,22 @@ import {
   TextContainerUpgrade,
   type EvenAppBridge,
 } from "@evenrealities/even_hub_sdk";
+import { Orchestrator } from "./orchestrator";
+import {
+  CommitmentsAnalyzer,
+  DecisionsAnalyzer,
+  IntentAnalyzer,
+  HedgingAnalyzer,
+  ContradictionAnalyzer,
+  TopicShiftAnalyzer,
+  StressCuesAnalyzer,
+  RecallAnalyzer,
+} from "./analyzers";
+import type { HudPayload, Verdict } from "./models/types";
 
 // ── Config ──────────────────────────────────────────────────────────
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY as string;
 const DISPLAY_W = 576;
 const DISPLAY_H = 288;
-const BUFFER_SECONDS = 90;
-const COOLDOWN_MS = 30_000;
-const RESULT_DISPLAY_MS = 10_000;
-
-// ── Types ───────────────────────────────────────────────────────────
-type Verdict = "SUPPORTED" | "PARTIAL" | "DISPUTED";
-type Confidence = "HIGH" | "MED" | "LOW";
-
-interface ValidationResult {
-  verdict: Verdict;
-  summary: string;
-  confidence: Confidence;
-}
-
-interface Segment {
-  text: string;
-  ts: number;
-}
 
 // ── Container ───────────────────────────────────────────────────────
 const ID_MAIN = 1;
@@ -36,8 +29,6 @@ let bridge: EvenAppBridge;
 let dgSocket: WebSocket | null = null;
 let dgReady = false;
 const dgPendingBuffer: Uint8Array[] = [];
-const transcript: Segment[] = [];
-let cooldownUntil = 0;
 
 // ── Display ─────────────────────────────────────────────────────────
 
@@ -102,25 +93,40 @@ const VERDICT_ICON: Record<Verdict, string> = {
   DISPUTED: "\u2717",
 };
 
-async function showListening(): Promise<void> {
-  await updateText("LISTENING...");
-}
+// ── HUD rendering (maps HudPayload → display text) ─────────────────
 
-async function showChecking(): Promise<void> {
-  await updateText("CHECKING...");
-}
+function renderHud(payload: HudPayload): void {
+  if (payload.mode === "LISTENING") {
+    updateText("LISTENING...");
+    return;
+  }
 
-async function showResult(r: ValidationResult): Promise<void> {
-  const header = `${VERDICT_ICON[r.verdict]} ${r.verdict} - ${r.confidence}`;
-  const body = wordWrap(r.summary, 50);
-  await updateText(header + "\n\n" + body);
-}
+  if (payload.verdict && payload.verdict in VERDICT_ICON) {
+    // Fact-validation result — same format as before
+    const icon = VERDICT_ICON[payload.verdict as Verdict];
+    const header = `${icon} ${payload.verdict} - ${payload.confidence}`;
+    const body = wordWrap(payload.line1, 50);
+    updateText(header + "\n\n" + body);
+    return;
+  }
 
-async function showError(msg: string): Promise<void> {
-  await updateText("ERROR\n\n" + msg.slice(0, 160));
+  if (payload.mode === "ALERT") {
+    updateText("ERROR\n\n" + payload.line1.slice(0, 160));
+    return;
+  }
+
+  if (payload.title === "CHECKING") {
+    updateText("CHECKING...");
+    return;
+  }
+
+  // Fallback for other analyzer outputs
+  updateText("ERROR\n\n" + payload.line1.slice(0, 160));
 }
 
 // ── Deepgram (via proxy) ────────────────────────────────────────────
+
+let orchestrator: Orchestrator;
 
 function connectDeepgram(): void {
   dgSocket = new WebSocket("wss://vikarux-g2.centralus.cloudapp.azure.com:3001");
@@ -139,7 +145,7 @@ function connectDeepgram(): void {
       if (!data?.is_final) return;
       const text: string | undefined =
         data?.channel?.alternatives?.[0]?.transcript;
-      if (text && text.trim()) handleTranscript(text.trim());
+      if (text && text.trim()) orchestrator.handleTranscript(text.trim());
     } catch { /* keepalive */ }
   };
 
@@ -159,211 +165,6 @@ function sendAudio(pcm: Uint8Array): void {
   }
 }
 
-// ── Transcript & trigger ────────────────────────────────────────────
-
-const TRIGGERS = [
-  // Primary: "even check" + common STT mishearings
-  "even check",
-  "even czech",
-  "even jack",
-  "even chek",
-  // Alternatives
-  "fact check",
-  "check this",
-];
-
-function normalize(text: string): string {
-  return text.toLowerCase().replace(/[^a-z ]/g, "").replace(/ +/g, " ").trim();
-}
-
-function detectTrigger(text: string): string | null {
-  const clean = normalize(text);
-  for (const t of TRIGGERS) {
-    if (clean.includes(t)) return t;
-  }
-  return null;
-}
-
-function handleTranscript(text: string): void {
-  const now = Date.now();
-  transcript.push({ text, ts: now });
-  console.log("[STT]", text);
-
-  // Prune segments older than 90s
-  const cutoff = now - BUFFER_SECONDS * 1000;
-  while (transcript.length > 0 && transcript[0].ts < cutoff) {
-    transcript.shift();
-  }
-
-  if (now < cooldownUntil) return;
-
-  const matched = detectTrigger(text);
-  if (matched) {
-    console.log("[Trigger] matched:", matched, "in:", text);
-    runValidation();
-  }
-}
-
-function getRecentTranscript(): string {
-  return transcript.map((s) => s.text).join(" ");
-}
-
-// ── Validation pipeline ─────────────────────────────────────────────
-
-async function runValidation(): Promise<void> {
-  cooldownUntil = Date.now() + COOLDOWN_MS;
-  await showChecking();
-
-  const recentText = getRecentTranscript();
-  if (recentText.trim().length < 10) {
-    await showError("Not enough speech to validate");
-    setTimeout(() => showListening(), 5000);
-    return;
-  }
-
-  try {
-    // Step 1: Extract claim via Haiku
-    console.log("[Validate] extracting claim...");
-    const claim = await extractClaim(recentText);
-    if (!claim || claim === "NONE") {
-      await showError("No verifiable claim found");
-      setTimeout(() => showListening(), 5000);
-      return;
-    }
-    console.log("[Validate] claim:", claim);
-
-    // Step 2: Validate via Sonnet + web search
-    console.log("[Validate] checking claim...");
-    const result = await validateClaim(claim);
-    console.log("[Validate] result:", JSON.stringify(result));
-    await showResult(result);
-
-    setTimeout(() => showListening(), RESULT_DISPLAY_MS);
-  } catch (err: any) {
-    console.error("[Validate] error:", err);
-    await showError(err?.message ?? "Validation failed");
-    setTimeout(() => showListening(), 5000);
-  }
-}
-
-// ── Claude API calls ────────────────────────────────────────────────
-
-async function claudeRequest(
-  model: string,
-  system: string,
-  userMsg: string,
-  tools?: any[],
-  maxTokens = 256
-): Promise<string> {
-  const body: any = {
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: "user", content: userMsg }],
-  };
-  if (tools) body.tools = tools;
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    console.error("[Claude] HTTP", res.status, "body:", errBody);
-    throw new Error(`Claude ${res.status}: ${errBody.slice(0, 200)}`);
-  }
-
-  const json = await res.json();
-  console.log("[Claude] stop_reason:", json.stop_reason, "content blocks:", json.content?.length);
-  const textBlock = json.content?.find((b: any) => b.type === "text");
-  if (!textBlock?.text) {
-    console.error("[Claude] no text block in response, content:", JSON.stringify(json.content?.map((b: any) => b.type)));
-    throw new Error("No text in Claude response");
-  }
-  return textBlock.text;
-}
-
-async function extractClaim(recentText: string): Promise<string | null> {
-  const system =
-    "You are a fact-checking assistant. From this conversation transcript, " +
-    "identify the single most recent verifiable factual claim that could be " +
-    "true or false. Return ONLY the claim as a plain sentence. " +
-    "If no verifiable claim exists, return NONE.";
-
-  const text = await claudeRequest(
-    "claude-haiku-4-5-20251001",
-    system,
-    recentText,
-    undefined,
-    128
-  );
-  const trimmed = text.trim();
-  return trimmed || null;
-}
-
-async function validateClaim(claim: string): Promise<ValidationResult> {
-  const system =
-    "You are a fact-checking assistant. Use web search to verify the claim " +
-    "against multiple sources. Respond with ONLY valid JSON:\n" +
-    '{"verdict":"SUPPORTED"|"PARTIAL"|"DISPUTED",' +
-    '"summary":"<one line, max 80 chars>",' +
-    '"confidence":"HIGH"|"MED"|"LOW"}\n' +
-    "SUPPORTED = well-supported by reliable sources\n" +
-    "PARTIAL = partly true but missing context\n" +
-    "DISPUTED = contradicted by reliable sources\n" +
-    "No text outside the JSON.";
-
-  const text = await claudeRequest(
-    "claude-sonnet-4-20250514",
-    system,
-    `Fact-check: "${claim}"`,
-    [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
-    256
-  );
-
-  console.log("[Validate] raw Claude text:", text);
-
-  // Try JSON parse first
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        verdict: parsed.verdict ?? "DISPUTED",
-        summary: parsed.summary ?? "Unable to determine",
-        confidence: parsed.confidence ?? "LOW",
-      };
-    } catch (e) {
-      console.warn("[Validate] JSON parse failed:", e);
-    }
-  }
-
-  // Fallback: extract verdict/summary from raw text via regex
-  console.log("[Validate] attempting regex fallback");
-  const verdictMatch = text.match(/\b(SUPPORTED|PARTIAL|DISPUTED)\b/i);
-  const summaryMatch = text.match(/summary[:\s]*["']?([^"'\n]{5,80})/i);
-  const confMatch = text.match(/\b(HIGH|MED|LOW)\b/i);
-
-  if (verdictMatch) {
-    return {
-      verdict: verdictMatch[1].toUpperCase() as Verdict,
-      summary: summaryMatch?.[1]?.trim() ?? text.slice(0, 80),
-      confidence: (confMatch?.[1]?.toUpperCase() as Confidence) ?? "LOW",
-    };
-  }
-
-  // Complete failure — show raw response on HUD
-  console.error("[Validate] could not parse response at all");
-  throw new Error("CHECK FAILED: " + text.slice(0, 80));
-}
-
 // ── Bootstrap ───────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -373,6 +174,20 @@ async function main(): Promise<void> {
   console.log("[ValidateAI] bridge ready");
 
   await initDisplay();
+
+  // Initialize orchestrator with HUD callback
+  orchestrator = new Orchestrator(renderHud);
+  orchestrator.registerAnalyzers([
+    new CommitmentsAnalyzer(),
+    new DecisionsAnalyzer(),
+    new IntentAnalyzer(),
+    new HedgingAnalyzer(),
+    new ContradictionAnalyzer(),
+    new TopicShiftAnalyzer(),
+    new StressCuesAnalyzer(),
+    new RecallAnalyzer(),
+  ]);
+  orchestrator.start();
 
   const micOk = await bridge.audioControl(true);
   console.log("[ValidateAI] mic:", micOk);
