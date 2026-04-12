@@ -21,10 +21,14 @@ import type { HudPayload, Verdict } from "./models/types";
 // ── Config ──────────────────────────────────────────────────────────
 const DISPLAY_W = 576;
 const DISPLAY_H = 288;
+const MAIN_H = 216; // top 3/4
+const PASSIVE_Y = 216; // bottom 1/4
+const PASSIVE_H = 72;
 
 // ── Container IDs ───────────────────────────────────────────────────
 const ID_MAIN = 1;
 const ID_LIST = 2;
+const ID_PASSIVE = 3;
 
 // ── State ───────────────────────────────────────────────────────────
 let bridge: EvenAppBridge;
@@ -32,6 +36,10 @@ let dgSocket: WebSocket | null = null;
 let dgReady = false;
 const dgPendingBuffer: Uint8Array[] = [];
 let listDismissTimer: ReturnType<typeof setTimeout> | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let heartbeatTick = false;
+let passiveCueTimer: ReturnType<typeof setTimeout> | null = null;
+let isListening = true;
 
 // ── Display ─────────────────────────────────────────────────────────
 
@@ -42,27 +50,50 @@ async function updateText(content: string): Promise<void> {
   await bridge.textContainerUpgrade(upgrade);
 }
 
+async function updatePassive(content: string): Promise<void> {
+  const upgrade = new TextContainerUpgrade();
+  upgrade.containerID = ID_PASSIVE;
+  upgrade.content = content;
+  await bridge.textContainerUpgrade(upgrade);
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function makeTextContainers(mainContent: string): TextContainerProperty[] {
+  return [
+    new TextContainerProperty({
+      containerID: ID_MAIN,
+      xPosition: 0,
+      yPosition: 0,
+      width: DISPLAY_W,
+      height: MAIN_H,
+      borderWidth: 0,
+      borderRadius: 0,
+      paddingLength: 4,
+      isEventCapture: 1,
+      content: mainContent,
+    }),
+    new TextContainerProperty({
+      containerID: ID_PASSIVE,
+      xPosition: 0,
+      yPosition: PASSIVE_Y,
+      width: DISPLAY_W,
+      height: PASSIVE_H,
+      borderWidth: 0,
+      borderRadius: 0,
+      paddingLength: 4,
+      isEventCapture: 0,
+      content: "",
+    }),
+  ];
+}
+
 async function initDisplay(): Promise<void> {
   const container = {
-    containerTotalNum: 1,
-    textObject: [
-      new TextContainerProperty({
-        containerID: ID_MAIN,
-        xPosition: 0,
-        yPosition: 0,
-        width: DISPLAY_W,
-        height: DISPLAY_H,
-        borderWidth: 0,
-        borderRadius: 0,
-        paddingLength: 4,
-        isEventCapture: 1,
-        content: "LISTENING...",
-      }),
-    ],
+    containerTotalNum: 2,
+    textObject: makeTextContainers("LISTENING..."),
   };
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -96,9 +127,38 @@ const VERDICT_ICON: Record<Verdict, string> = {
   DISPUTED: "\u2717",
 };
 
+// ── Heartbeat ───────────────────────────────────────────────────────
+
+let orchestrator: Orchestrator;
+
+function getListeningText(): string {
+  const dots = heartbeatTick ? "LISTENING..." : "LISTENING";
+  const badge = orchestrator?.getAnalyzerBadge?.() ?? "";
+  return badge ? `${dots}\n${badge}` : dots;
+}
+
+function startHeartbeat(): void {
+  stopHeartbeat();
+  isListening = true;
+  heartbeatTimer = setInterval(() => {
+    if (!isListening) return;
+    heartbeatTick = !heartbeatTick;
+    updateText(getListeningText());
+  }, 3000);
+}
+
+function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  isListening = false;
+}
+
 // ── List Container display ──────────────────────────────────────────
 
 async function showListContainer(items: string[]): Promise<void> {
+  stopHeartbeat();
   const listProp = new ListContainerProperty({
     containerID: ID_LIST,
     xPosition: 0,
@@ -109,7 +169,7 @@ async function showListContainer(items: string[]): Promise<void> {
     borderRadius: 0,
     paddingLength: 4,
     isEventCapture: 1,
-    containerName: "Commitments",
+    containerName: "List",
     itemContainer: new ListItemContainerProperty({
       itemCount: items.length,
       itemWidth: DISPLAY_W,
@@ -131,45 +191,48 @@ async function restoreTextContainer(): Promise<void> {
   }
 
   await bridge.rebuildPageContainer({
-    containerTotalNum: 1,
-    textObject: [
-      new TextContainerProperty({
-        containerID: ID_MAIN,
-        xPosition: 0,
-        yPosition: 0,
-        width: DISPLAY_W,
-        height: DISPLAY_H,
-        borderWidth: 0,
-        borderRadius: 0,
-        paddingLength: 4,
-        isEventCapture: 1,
-        content: "LISTENING...",
-      }),
-    ],
+    containerTotalNum: 2,
+    textObject: makeTextContainers(getListeningText()),
   });
+  startHeartbeat();
   console.log("[Display] text container restored");
+}
+
+// ── Passive cue helper ──────────────────────────────────────────────
+
+function showPassiveCue(text: string, ttlMs: number): void {
+  if (passiveCueTimer) clearTimeout(passiveCueTimer);
+  updatePassive(text);
+  passiveCueTimer = setTimeout(() => {
+    updatePassive("");
+    passiveCueTimer = null;
+  }, ttlMs);
 }
 
 // ── HUD rendering (maps HudPayload → display text) ─────────────────
 
 function renderHud(payload: HudPayload): void {
   if (payload.mode === "LISTENING") {
-    updateText("LISTENING...");
+    stopHeartbeat();
+    heartbeatTick = true;
+    updateText(getListeningText());
+    updatePassive("");
+    startHeartbeat();
     return;
   }
 
   if (payload.mode === "LIST" && payload.listItems) {
-    // Native G2 list container for commitments
     showListContainer(payload.listItems);
-    // Auto-dismiss after ttlMs (30s) and return to LISTENING
     listDismissTimer = setTimeout(() => {
       restoreTextContainer();
     }, payload.ttlMs || 30_000);
     return;
   }
 
+  // Any non-LISTENING, non-LIST mode stops heartbeat
+  stopHeartbeat();
+
   if (payload.verdict && payload.verdict in VERDICT_ICON) {
-    // Fact-validation result — same format as before
     const icon = VERDICT_ICON[payload.verdict as Verdict];
     const header = `${icon} ${payload.verdict} - ${payload.confidence}`;
     const body = wordWrap(payload.line1, 50);
@@ -183,7 +246,6 @@ function renderHud(payload: HudPayload): void {
   }
 
   if (payload.mode === "ALERT") {
-    // Full card for contradictions and errors — 8 seconds
     const header = payload.title ?? "ALERT";
     const now = wordWrap(payload.line1.slice(0, 100), 50);
     const prior = payload.line2 ? "\n" + wordWrap(payload.line2.slice(0, 100), 50) : "";
@@ -192,29 +254,24 @@ function renderHud(payload: HudPayload): void {
   }
 
   if (payload.mode === "PASSIVE") {
-    // Small one-line cue — 4 seconds, no disruption
+    // Render in bottom quarter only — no disruption to main content
     const tag = payload.title ?? payload.sourceAnalyzer;
-    updateText(`${tag}: ${payload.line1.slice(0, 80)}`);
+    showPassiveCue(`${tag}: ${payload.line1.slice(0, 60)}`, payload.ttlMs || 4000);
     return;
   }
 
   if (payload.mode === "CARD") {
-    // Generic card for non-verdict results (recall, etc.)
     const header = payload.title ?? "INFO";
     const conf = payload.confidence ? ` - ${payload.confidence}` : "";
-    // Use line2 as pre-formatted body if present, otherwise wordWrap line1
     const body = payload.line2 ?? wordWrap(payload.line1, 50);
     updateText(`${header}${conf}\n\n${body}`);
     return;
   }
 
-  // Fallback
   updateText(payload.line1.slice(0, 120));
 }
 
 // ── Deepgram (via proxy) ────────────────────────────────────────────
-
-let orchestrator: Orchestrator;
 
 function connectDeepgram(): void {
   dgSocket = new WebSocket("wss://vikarux-g2.centralus.cloudapp.azure.com:3001");
@@ -285,7 +342,21 @@ async function main(): Promise<void> {
     new TopicShiftAnalyzer(),
     new StressCuesAnalyzer(),
   ]);
-  await orchestrator.start();
+  const memoryItemCount = await orchestrator.start();
+
+  // Launch greeting
+  if (memoryItemCount > 0) {
+    updateText(`WELCOME BACK\n\n${memoryItemCount} items in memory`);
+    await delay(4000);
+  } else {
+    updateText("READY");
+    await delay(2000);
+  }
+
+  // Transition to listening with heartbeat
+  heartbeatTick = true;
+  updateText(getListeningText());
+  startHeartbeat();
 
   const micOk = await bridge.audioControl(true);
   console.log("[ValidateAI] mic:", micOk);
@@ -296,7 +367,6 @@ async function main(): Promise<void> {
     if (event.audioEvent?.audioPcm) {
       sendAudio(event.audioEvent.audioPcm);
     }
-    // Dismiss list container on list item interaction
     if (event.listEvent && listDismissTimer) {
       console.log("[Display] list event received, dismissing list");
       restoreTextContainer();

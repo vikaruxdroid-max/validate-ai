@@ -43,6 +43,14 @@ const FORGET_TRIGGERS = [
   "even forget", "even clear", "even reset",
 ];
 
+const STATUS_TRIGGERS = [
+  "even status", "even check status", "status", "even active",
+];
+
+const HELP_TRIGGERS = [
+  "even help", "even commands", "help", "even guide",
+];
+
 const TOGGLE_ANALYZERS: Record<string, string> = {
   hedging: "hedging",
   intent: "intent",
@@ -52,6 +60,31 @@ const TOGGLE_ANALYZERS: Record<string, string> = {
   commitments: "commitments",
   decisions: "decisions",
 };
+
+const ANALYZER_DISPLAY_NAMES: Record<string, string> = {
+  factValidation: "FACT VALID",
+  commitments: "COMMITMENTS",
+  decisions: "DECISIONS",
+  intent: "INTENT",
+  hedging: "HEDGING",
+  contradiction: "CONTRADICTION",
+  topicShift: "TOPIC SHIFT",
+  stressCues: "STRESS CUES",
+};
+
+const HELP_ITEMS = [
+  "even check \u2014 fact validate",
+  "even why \u2014 explain result",
+  "even recall \u2014 search memory",
+  "even commitments \u2014 list commits",
+  "even decisions \u2014 list decisions",
+  "even summary \u2014 session summary",
+  "even stats \u2014 session stats",
+  "even status \u2014 analyzer status",
+  "even toggle [name] \u2014 toggle analyzer",
+  "even forget \u2014 clear memory",
+  "even help \u2014 show commands",
+];
 
 function normalize(text: string): string {
   return text
@@ -108,12 +141,24 @@ export class Orchestrator {
     }
   }
 
-  /** Start the passive analyzer polling loop, entity extractor, and auto-save. */
-  async start(): Promise<void> {
+  /** Start polling loops and auto-save. Returns loaded memory item count. */
+  async start(): Promise<number> {
     await this.memoryStore.load();
     this.passiveTimer = setInterval(() => this.runPassiveCycle(), 2000);
     this.entityExtractTimer = setInterval(() => this.runEntityExtraction(), 10_000);
     this.memoryStore.startAutoSave(60_000);
+    const session = this.memoryStore.getSession();
+    return session.pinned.length + session.commitments.length +
+      session.decisions.length + session.entities.length;
+  }
+
+  /** Returns a status badge string for the LISTENING display. */
+  getAnalyzerBadge(): string {
+    const total = Object.keys(ANALYZER_DISPLAY_NAMES).length;
+    const off = this.disabledAnalyzers.size;
+    const active = total - off;
+    if (off === 0) return `${active} analyzers active`;
+    return `${active} analyzers active (${off} off)`;
   }
 
   stop(): void {
@@ -203,6 +248,18 @@ export class Orchestrator {
     if (detectTriggerFrom(text, FORGET_TRIGGERS)) {
       console.log("[Orchestrator] forget trigger");
       await this.handleForget();
+      return;
+    }
+
+    if (detectTriggerFrom(text, STATUS_TRIGGERS)) {
+      console.log("[Orchestrator] status trigger");
+      this.handleStatus();
+      return;
+    }
+
+    if (detectTriggerFrom(text, HELP_TRIGGERS)) {
+      console.log("[Orchestrator] help trigger");
+      this.handleHelp();
       return;
     }
 
@@ -449,6 +506,35 @@ export class Orchestrator {
       sourceAnalyzer: "system",
     });
     setTimeout(() => this.emitListening(), 3000);
+  }
+
+  private handleStatus(): void {
+    const names = Object.keys(ANALYZER_DISPLAY_NAMES);
+    const items = names.map((name) => {
+      const display = ANALYZER_DISPLAY_NAMES[name];
+      const enabled = !this.disabledAnalyzers.has(name);
+      return enabled ? `\u2713 ${display}` : `\u2717 ${display}`;
+    });
+
+    this.onHud({
+      mode: "LIST",
+      title: "ANALYZER STATUS",
+      line1: "",
+      listItems: items.slice(0, 20),
+      ttlMs: 15_000,
+      sourceAnalyzer: "system",
+    });
+  }
+
+  private handleHelp(): void {
+    this.onHud({
+      mode: "LIST",
+      title: "COMMANDS",
+      line1: "",
+      listItems: HELP_ITEMS,
+      ttlMs: 20_000,
+      sourceAnalyzer: "system",
+    });
   }
 
   private async runEntityExtraction(): Promise<void> {
