@@ -2,7 +2,7 @@
 
 export type Confidence = "HIGH" | "MED" | "LOW";
 export type Verdict = "SUPPORTED" | "PARTIAL" | "DISPUTED";
-export type HudMode = "LISTENING" | "CARD" | "ALERT" | "PASSIVE";
+export type HudMode = "LISTENING" | "CARD" | "ALERT" | "PASSIVE" | "LIST";
 export type SuggestedHudMode = "COMPACT" | "CARD" | "ALERT" | "PASSIVE";
 
 // ── Transcript ──────────────────────────────────────────────────────
@@ -48,17 +48,25 @@ export interface AcousticFeatureWindow {
 
 // ── Memory store interface ───────────────────────────────────────────
 
+export interface CommitmentEntry {
+  text: string;
+  owner?: string;
+  dueDate?: string;
+  ts: number;
+}
+
 export interface IMemoryStore {
   pin(item: { text: string; source: string }): void;
-  recall(query: string): Promise<{ found: boolean; match?: string; context?: string }>;
+  recall(query: string): Promise<{ found: boolean; matches?: string[]; context?: string }>;
   getSession(): {
     pinned: { id: string; text: string; source: string; ts: number }[];
-    commitments: string[];
+    commitments: CommitmentEntry[];
     decisions: string[];
     entities: string[];
   };
+  getCommitments(): CommitmentEntry[];
   clearSession(): void;
-  addCommitment(text: string): void;
+  addCommitment(entry: { text: string; owner?: string; dueDate?: string }): void;
   addDecision(text: string): void;
   addEntity(name: string): void;
 }
@@ -100,6 +108,7 @@ export interface HudPayload {
   confidence?: Confidence;
   line1: string;
   line2?: string;
+  listItems?: string[];
   ttlMs: number;
   sourceAnalyzer: string;
 }

@@ -40,7 +40,7 @@ export class RecallAnalyzer extends BaseAnalyzer {
         title: "RECALL",
         summary: "Memory store not available",
         suggestedHudMode: "COMPACT",
-        expiresInMs: 4000,
+        expiresInMs: 10_000,
       });
     }
 
@@ -57,7 +57,7 @@ export class RecallAnalyzer extends BaseAnalyzer {
         title: "RECALL",
         summary: "Nothing stored yet",
         suggestedHudMode: "COMPACT",
-        expiresInMs: 4000,
+        expiresInMs: 10_000,
       });
     }
 
@@ -75,25 +75,37 @@ export class RecallAnalyzer extends BaseAnalyzer {
 
     const result = await ctx.memoryStore.recall(query);
 
-    if (!result.found || !result.match) {
+    if (!result.found || !result.matches || result.matches.length === 0) {
       return this.result({
         confidence: "LOW",
         title: "RECALL",
         summary: "No matching memory found",
         suggestedHudMode: "COMPACT",
-        expiresInMs: 4000,
+        expiresInMs: 10_000,
       });
     }
 
-    console.log("[Recall] found:", result.match);
+    const matchCount = result.matches.length;
+    console.log("[Recall] found:", matchCount, "matches");
+
+    // Format title: "2 COMMITMENTS" or "3 of N COMMITMENTS" if total > shown
+    const title =
+      matchCount < totalItems
+        ? `${matchCount} of ${totalItems} RESULTS`
+        : `${matchCount} RESULTS`;
+
+    // Format body: numbered list, each item truncated to fit HUD
+    const body = result.matches
+      .map((m, i) => `${i + 1}. ${m.slice(0, 46)}`)
+      .join("\n");
 
     return this.result({
       confidence: "MED",
-      title: "RECALL",
-      summary: result.match,
+      title,
+      summary: body,
       suggestedHudMode: "CARD",
-      expiresInMs: 8000,
-      details: { match: result.match, context: result.context },
+      expiresInMs: 10_000,
+      details: { matches: result.matches, context: result.context },
     });
   }
 }

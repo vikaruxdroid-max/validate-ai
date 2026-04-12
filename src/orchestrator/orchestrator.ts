@@ -14,6 +14,29 @@ import { CooldownEngine } from "./cooldown";
 
 const BUFFER_SECONDS = 90;
 
+const COMMITMENTS_LIST_TRIGGERS = [
+  "even commitments",
+  "even commitment",
+  "even commit list",
+  "list commitments",
+];
+
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z ]/g, "")
+    .replace(/ +/g, " ")
+    .trim();
+}
+
+function detectCommitmentsTrigger(text: string): string | null {
+  const clean = normalize(text);
+  for (const t of COMMITMENTS_LIST_TRIGGERS) {
+    if (clean.includes(t)) return t;
+  }
+  return null;
+}
+
 export class Orchestrator {
   private scheduler = new Scheduler();
   private prioritizer = new Prioritizer();
@@ -93,8 +116,49 @@ export class Orchestrator {
       if (recallTrigger) {
         console.log("[Orchestrator] recall trigger matched:", recallTrigger, "in:", text);
         await this.runActiveAnalyzer(this.recallAnalyzer);
+        return;
       }
     }
+
+    // Check for commitments list trigger
+    const commitTrigger = detectCommitmentsTrigger(text);
+    if (commitTrigger) {
+      console.log("[Orchestrator] commitments list trigger:", commitTrigger);
+      this.showCommitmentsList();
+    }
+  }
+
+  private showCommitmentsList(): void {
+    const commitments = this.memoryStore.getCommitments();
+
+    if (commitments.length === 0) {
+      this.onHud({
+        mode: "CARD",
+        title: "COMMITMENTS",
+        line1: "NO COMMITMENTS YET",
+        ttlMs: 5000,
+        sourceAnalyzer: "system",
+      });
+      setTimeout(() => this.emitListening(), 5000);
+      return;
+    }
+
+    // Format each commitment as a list item, truncated to 64 chars
+    const items = commitments.map((c) => {
+      const parts = [c.text];
+      if (c.owner) parts.push(`(${c.owner})`);
+      if (c.dueDate) parts.push(`by ${c.dueDate}`);
+      return parts.join(" ").slice(0, 64);
+    });
+
+    this.onHud({
+      mode: "LIST",
+      title: `${items.length} COMMITMENTS`,
+      line1: "",
+      listItems: items,
+      ttlMs: 30_000,
+      sourceAnalyzer: "system",
+    });
   }
 
   // ── Internal ──────────────────────────────────────────────────────
@@ -195,6 +259,8 @@ export class Orchestrator {
 
   private toHudPayload(result: AnalyzerResult): HudPayload {
     const verdict = result.details?.verdict as string | undefined;
+    // If summary contains newlines, treat as pre-formatted body (line2)
+    const hasNewlines = result.summary.includes("\n");
     return {
       mode:
         result.suggestedHudMode === "COMPACT"
@@ -204,6 +270,7 @@ export class Orchestrator {
       verdict,
       confidence: result.confidence,
       line1: result.summary,
+      line2: hasNewlines ? result.summary : undefined,
       ttlMs: result.expiresInMs ?? 10_000,
       sourceAnalyzer: result.analyzer,
     };

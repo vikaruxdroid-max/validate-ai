@@ -2,6 +2,8 @@ import {
   waitForEvenAppBridge,
   TextContainerProperty,
   TextContainerUpgrade,
+  ListContainerProperty,
+  ListItemContainerProperty,
   type EvenAppBridge,
 } from "@evenrealities/even_hub_sdk";
 import { Orchestrator } from "./orchestrator";
@@ -20,14 +22,16 @@ import type { HudPayload, Verdict } from "./models/types";
 const DISPLAY_W = 576;
 const DISPLAY_H = 288;
 
-// ── Container ───────────────────────────────────────────────────────
+// ── Container IDs ───────────────────────────────────────────────────
 const ID_MAIN = 1;
+const ID_LIST = 2;
 
 // ── State ───────────────────────────────────────────────────────────
 let bridge: EvenAppBridge;
 let dgSocket: WebSocket | null = null;
 let dgReady = false;
 const dgPendingBuffer: Uint8Array[] = [];
+let listDismissTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Display ─────────────────────────────────────────────────────────
 
@@ -92,11 +96,75 @@ const VERDICT_ICON: Record<Verdict, string> = {
   DISPUTED: "\u2717",
 };
 
+// ── List Container display ──────────────────────────────────────────
+
+async function showListContainer(items: string[]): Promise<void> {
+  const listProp = new ListContainerProperty({
+    containerID: ID_LIST,
+    xPosition: 0,
+    yPosition: 0,
+    width: DISPLAY_W,
+    height: DISPLAY_H,
+    borderWidth: 0,
+    borderRadius: 0,
+    paddingLength: 4,
+    isEventCapture: 1,
+    containerName: "Commitments",
+    itemContainer: new ListItemContainerProperty({
+      itemCount: items.length,
+      itemWidth: DISPLAY_W,
+      itemName: items,
+    }),
+  });
+
+  await bridge.rebuildPageContainer({
+    containerTotalNum: 1,
+    listObject: [listProp],
+  });
+  console.log("[Display] list shown with", items.length, "items");
+}
+
+async function restoreTextContainer(): Promise<void> {
+  if (listDismissTimer) {
+    clearTimeout(listDismissTimer);
+    listDismissTimer = null;
+  }
+
+  await bridge.rebuildPageContainer({
+    containerTotalNum: 1,
+    textObject: [
+      new TextContainerProperty({
+        containerID: ID_MAIN,
+        xPosition: 0,
+        yPosition: 0,
+        width: DISPLAY_W,
+        height: DISPLAY_H,
+        borderWidth: 0,
+        borderRadius: 0,
+        paddingLength: 4,
+        isEventCapture: 1,
+        content: "LISTENING...",
+      }),
+    ],
+  });
+  console.log("[Display] text container restored");
+}
+
 // ── HUD rendering (maps HudPayload → display text) ─────────────────
 
 function renderHud(payload: HudPayload): void {
   if (payload.mode === "LISTENING") {
     updateText("LISTENING...");
+    return;
+  }
+
+  if (payload.mode === "LIST" && payload.listItems) {
+    // Native G2 list container for commitments
+    showListContainer(payload.listItems);
+    // Auto-dismiss after ttlMs (30s) and return to LISTENING
+    listDismissTimer = setTimeout(() => {
+      restoreTextContainer();
+    }, payload.ttlMs || 30_000);
     return;
   }
 
@@ -133,7 +201,8 @@ function renderHud(payload: HudPayload): void {
     // Generic card for non-verdict results (recall, etc.)
     const header = payload.title ?? "INFO";
     const conf = payload.confidence ? ` - ${payload.confidence}` : "";
-    const body = wordWrap(payload.line1, 50);
+    // Use line2 as pre-formatted body if present, otherwise wordWrap line1
+    const body = payload.line2 ?? wordWrap(payload.line1, 50);
     updateText(`${header}${conf}\n\n${body}`);
     return;
   }
@@ -225,6 +294,11 @@ async function main(): Promise<void> {
   bridge.onEvenHubEvent((event) => {
     if (event.audioEvent?.audioPcm) {
       sendAudio(event.audioEvent.audioPcm);
+    }
+    // Dismiss list container on list item interaction
+    if (event.listEvent && listDismissTimer) {
+      console.log("[Display] list event received, dismissing list");
+      restoreTextContainer();
     }
   });
 

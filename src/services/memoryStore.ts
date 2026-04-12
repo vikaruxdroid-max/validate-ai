@@ -1,6 +1,6 @@
 import { claudeRequest } from "./claude";
 import { RECALL_SYSTEM } from "../prompts/haiku";
-import type { IMemoryStore } from "../models/types";
+import type { IMemoryStore, CommitmentEntry } from "../models/types";
 
 interface PinnedItem {
   id: string;
@@ -11,7 +11,7 @@ interface PinnedItem {
 
 export class MemoryStore implements IMemoryStore {
   private pinned: PinnedItem[] = [];
-  private commitments: string[] = [];
+  private commitments: CommitmentEntry[] = [];
   private decisions: string[] = [];
   private entities = new Set<string>();
 
@@ -27,7 +27,7 @@ export class MemoryStore implements IMemoryStore {
 
   async recall(
     query: string,
-  ): Promise<{ found: boolean; match?: string; context?: string }> {
+  ): Promise<{ found: boolean; matches?: string[]; context?: string }> {
     const items = this.getAllItems();
     if (items.length === 0) {
       return { found: false };
@@ -45,18 +45,18 @@ export class MemoryStore implements IMemoryStore {
         RECALL_SYSTEM,
         userMsg,
         undefined,
-        128,
+        256,
       );
 
       console.log("[MemoryStore] recall raw:", raw);
 
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) return { found: false };
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return { found: false };
 
-      const parsed = JSON.parse(match[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
       return {
         found: !!parsed.found,
-        match: parsed.match,
+        matches: parsed.matches,
         context: parsed.context,
       };
     } catch (err) {
@@ -74,6 +74,10 @@ export class MemoryStore implements IMemoryStore {
     };
   }
 
+  getCommitments(): CommitmentEntry[] {
+    return [...this.commitments];
+  }
+
   clearSession(): void {
     this.pinned = [];
     this.commitments = [];
@@ -82,11 +86,15 @@ export class MemoryStore implements IMemoryStore {
     console.log("[MemoryStore] session cleared");
   }
 
-  addCommitment(text: string): void {
-    if (!this.commitments.includes(text)) {
-      this.commitments.push(text);
-      console.log("[MemoryStore] commitment:", text);
-    }
+  addCommitment(entry: { text: string; owner?: string; dueDate?: string }): void {
+    if (this.commitments.some((c) => c.text === entry.text)) return;
+    this.commitments.push({
+      text: entry.text,
+      owner: entry.owner,
+      dueDate: entry.dueDate,
+      ts: Date.now(),
+    });
+    console.log("[MemoryStore] commitment:", entry.text, "owner:", entry.owner, "due:", entry.dueDate);
   }
 
   addDecision(text: string): void {
@@ -106,7 +114,12 @@ export class MemoryStore implements IMemoryStore {
   private getAllItems(): string[] {
     return [
       ...this.pinned.map((p) => `[pinned] ${p.text}`),
-      ...this.commitments.map((c) => `[commitment] ${c}`),
+      ...this.commitments.map((c) => {
+        const parts = [c.text];
+        if (c.owner) parts.push(`(${c.owner})`);
+        if (c.dueDate) parts.push(`by ${c.dueDate}`);
+        return `[commitment] ${parts.join(" ")}`;
+      }),
       ...this.decisions.map((d) => `[decision] ${d}`),
       ...[...this.entities].map((e) => `[entity] ${e}`),
     ];

@@ -52,9 +52,13 @@ export class CommitmentsAnalyzer extends BaseAnalyzer {
       const confidence = (parsed.confidence ?? "LOW") as Confidence;
       if (confidence === "LOW") return this.noTrigger();
 
-      // Auto-store in memory
+      // Auto-store in memory with structured data
       if (ctx.memoryStore && parsed.commitment) {
-        ctx.memoryStore.addCommitment(parsed.commitment);
+        ctx.memoryStore.addCommitment({
+          text: parsed.commitment,
+          owner: parsed.owner,
+          dueDate: parsed.dueDate,
+        });
       }
 
       const owner = parsed.owner ? ` (${parsed.owner})` : "";
