@@ -7,3 +7,4 @@ export { TOPIC_SHIFT_SYSTEM } from "./topicShift";
 export { CONTRADICTION_SYSTEM } from "./contradiction";
 export { RECALL_SYSTEM } from "./recall";
 export { SESSION_SUMMARY_SYSTEM } from "./sessionSummary";
+export { ENTITY_EXTRACTION_SYSTEM } from "./entityExtraction";

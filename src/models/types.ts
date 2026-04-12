@@ -55,6 +55,15 @@ export interface CommitmentEntry {
   ts: number;
 }
 
+export type EntityType = "PERSON" | "DATE" | "NUMBER" | "PLACE" | "ORGANIZATION";
+
+export interface EntityEntry {
+  text: string;
+  type: EntityType;
+  context: string;
+  ts: number;
+}
+
 export interface IMemoryStore {
   pin(item: { text: string; source: string }): void;
   recall(query: string): Promise<{ found: boolean; matches?: string[]; context?: string }>;
@@ -62,14 +71,17 @@ export interface IMemoryStore {
     pinned: { id: string; text: string; source: string; ts: number }[];
     commitments: CommitmentEntry[];
     decisions: string[];
-    entities: string[];
+    entities: EntityEntry[];
   };
   getCommitments(): CommitmentEntry[];
   getDecisions(): string[];
+  getEntities(): EntityEntry[];
   clearSession(): void;
   addCommitment(entry: { text: string; owner?: string; dueDate?: string }): void;
   addDecision(text: string): void;
-  addEntity(name: string): void;
+  addEntity(entry: { text: string; type: EntityType; context: string }): void;
+  toJSON(): string;
+  loadJSON(json: string): void;
 }
 
 // ── Analyzer framework ──────────────────────────────────────────────

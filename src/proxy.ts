@@ -1,11 +1,12 @@
 import "dotenv/config";
-import { readFileSync } from "fs";
-import { createServer } from "https";
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "https";
 import { WebSocketServer, WebSocket } from "ws";
 
 const DG_KEY = process.env.VITE_DEEPGRAM_API_KEY;
 const PORT = 3001;
 const CERT_DIR = "/etc/letsencrypt/live/vikarux-g2.centralus.cloudapp.azure.com";
+const MEMORY_PATH = process.env.MEMORY_PATH ?? "/home/vikarux/validate-ai/session-memory.json";
 
 if (!DG_KEY) {
   console.error("[proxy] VITE_DEEPGRAM_API_KEY not set in .env");
@@ -13,17 +14,95 @@ if (!DG_KEY) {
 }
 
 console.log("[proxy] key length:", DG_KEY.length, "first 8:", DG_KEY.slice(0, 8));
+console.log("[proxy] memory path:", MEMORY_PATH);
 
-const httpsServer = createServer({
-  cert: readFileSync(`${CERT_DIR}/fullchain.pem`),
-  key: readFileSync(`${CERT_DIR}/privkey.pem`),
-});
+// ── HTTPS server with request handler for persistence ───────────────
+
+function handleRequest(req: IncomingMessage, res: ServerResponse): void {
+  // CORS headers for browser access
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (req.url === "/memory/save" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk: Buffer) => (body += chunk.toString()));
+    req.on("end", () => {
+      try {
+        writeFileSync(MEMORY_PATH, body, "utf-8");
+        console.log("[proxy] memory saved:", body.length, "bytes");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end('{"ok":true}');
+      } catch (err: any) {
+        console.error("[proxy] memory save error:", err.message);
+        res.writeHead(500);
+        res.end('{"error":"save failed"}');
+      }
+    });
+    return;
+  }
+
+  if (req.url === "/memory/load" && req.method === "GET") {
+    try {
+      if (existsSync(MEMORY_PATH)) {
+        const data = readFileSync(MEMORY_PATH, "utf-8");
+        console.log("[proxy] memory loaded:", data.length, "bytes");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(data);
+      } else {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end("{}");
+      }
+    } catch (err: any) {
+      console.error("[proxy] memory load error:", err.message);
+      res.writeHead(500);
+      res.end('{"error":"load failed"}');
+    }
+    return;
+  }
+
+  if (req.url === "/memory" && req.method === "DELETE") {
+    try {
+      if (existsSync(MEMORY_PATH)) {
+        unlinkSync(MEMORY_PATH);
+        console.log("[proxy] memory file deleted");
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"ok":true}');
+    } catch (err: any) {
+      console.error("[proxy] memory delete error:", err.message);
+      res.writeHead(500);
+      res.end('{"error":"delete failed"}');
+    }
+    return;
+  }
+
+  // Not a memory endpoint — ignore (WebSocket upgrade handled separately)
+  res.writeHead(404);
+  res.end();
+}
+
+const httpsServer = createServer(
+  {
+    cert: readFileSync(`${CERT_DIR}/fullchain.pem`),
+    key: readFileSync(`${CERT_DIR}/privkey.pem`),
+  },
+  handleRequest,
+);
 
 const wss = new WebSocketServer({ server: httpsServer });
 
 httpsServer.listen(PORT, "0.0.0.0", () => {
   console.log(`[proxy] listening on wss://0.0.0.0:${PORT}`);
 });
+
+// ── Deepgram WebSocket relay ────────────────────────────────────────
 
 wss.on("connection", (browser) => {
   console.log("[proxy] browser connected, opening Deepgram upstream");

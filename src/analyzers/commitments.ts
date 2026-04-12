@@ -59,6 +59,13 @@ export class CommitmentsAnalyzer extends BaseAnalyzer {
           owner: parsed.owner,
           dueDate: parsed.dueDate,
         });
+        // Track entities from commitment
+        if (parsed.owner) {
+          ctx.memoryStore.addEntity({ text: parsed.owner, type: "PERSON", context: "commitment owner" });
+        }
+        if (parsed.dueDate) {
+          ctx.memoryStore.addEntity({ text: parsed.dueDate, type: "DATE", context: "commitment deadline" });
+        }
       }
 
       const owner = parsed.owner ? ` (${parsed.owner})` : "";

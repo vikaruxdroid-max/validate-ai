@@ -10,7 +10,7 @@ import { RecallAnalyzer } from "../analyzers/recall";
 import { MemoryStore } from "../services/memoryStore";
 import { claudeRequest } from "../services/claude";
 import { EXPLAIN_WHY_SYSTEM } from "../prompts/sonnet";
-import { SESSION_SUMMARY_SYSTEM } from "../prompts/haiku";
+import { SESSION_SUMMARY_SYSTEM, ENTITY_EXTRACTION_SYSTEM } from "../prompts/haiku";
 import { Scheduler } from "./scheduler";
 import { Prioritizer } from "./prioritizer";
 import { CooldownEngine } from "./cooldown";
@@ -34,6 +34,24 @@ const EXPLAIN_WHY_TRIGGERS = [
 const SUMMARY_TRIGGERS = [
   "even summary", "even sum", "even summarize", "summary",
 ];
+
+const STATS_TRIGGERS = [
+  "even stats", "even stat", "even statistics", "stats",
+];
+
+const FORGET_TRIGGERS = [
+  "even forget", "even clear", "even reset",
+];
+
+const TOGGLE_ANALYZERS: Record<string, string> = {
+  hedging: "hedging",
+  intent: "intent",
+  topic: "topicShift",
+  stress: "stressCues",
+  contradiction: "contradiction",
+  commitments: "commitments",
+  decisions: "decisions",
+};
 
 function normalize(text: string): string {
   return text
@@ -60,11 +78,15 @@ export class Orchestrator {
   private memoryStore = new MemoryStore();
   private transcript: TranscriptSegment[] = [];
   private recentOutputs: AnalyzerResult[] = [];
+  private disabledAnalyzers = new Set<string>();
   private factsCheckedCount = 0;
   private contradictionsCount = 0;
+  private sessionStartTs = Date.now();
   private sessionId: string;
   private onHud: (payload: HudPayload) => void;
   private passiveTimer: ReturnType<typeof setInterval> | null = null;
+  private entityExtractTimer: ReturnType<typeof setInterval> | null = null;
+  private lastEntityExtractLength = 0;
   private factValidation: FactValidationAnalyzer;
   private recallAnalyzer: RecallAnalyzer;
 
@@ -86,9 +108,12 @@ export class Orchestrator {
     }
   }
 
-  /** Start the passive analyzer polling loop. */
-  start(): void {
+  /** Start the passive analyzer polling loop, entity extractor, and auto-save. */
+  async start(): Promise<void> {
+    await this.memoryStore.load();
     this.passiveTimer = setInterval(() => this.runPassiveCycle(), 2000);
+    this.entityExtractTimer = setInterval(() => this.runEntityExtraction(), 10_000);
+    this.memoryStore.startAutoSave(60_000);
   }
 
   stop(): void {
@@ -96,6 +121,12 @@ export class Orchestrator {
       clearInterval(this.passiveTimer);
       this.passiveTimer = null;
     }
+    if (this.entityExtractTimer) {
+      clearInterval(this.entityExtractTimer);
+      this.entityExtractTimer = null;
+    }
+    this.memoryStore.stopAutoSave();
+    this.memoryStore.save();
   }
 
   /** Called when a new final transcript segment arrives from Deepgram. */
@@ -160,6 +191,26 @@ export class Orchestrator {
     if (detectTriggerFrom(text, SUMMARY_TRIGGERS)) {
       console.log("[Orchestrator] session-summary trigger");
       await this.handleSessionSummary();
+      return;
+    }
+
+    if (detectTriggerFrom(text, STATS_TRIGGERS)) {
+      console.log("[Orchestrator] session-stats trigger");
+      this.handleSessionStats();
+      return;
+    }
+
+    if (detectTriggerFrom(text, FORGET_TRIGGERS)) {
+      console.log("[Orchestrator] forget trigger");
+      await this.handleForget();
+      return;
+    }
+
+    // Toggle: "even toggle hedging" etc.
+    const toggleMatch = normalize(text).match(/even toggle (\w+)/);
+    if (toggleMatch) {
+      const analyzerKey = toggleMatch[1];
+      this.handleToggle(analyzerKey);
     }
   }
 
@@ -341,6 +392,113 @@ export class Orchestrator {
     }, 6000);
   }
 
+  private handleSessionStats(): void {
+    const session = this.memoryStore.getSession();
+    const mins = Math.round((Date.now() - this.sessionStartTs) / 60_000);
+    const l1 = `${this.factsCheckedCount} facts \u00b7 ${session.commitments.length} commits \u00b7 ${session.decisions.length} decisions`;
+    const l2 = `${session.entities.length} entities \u00b7 ${this.contradictionsCount} contradictions \u00b7 ${mins}m session`;
+
+    this.onHud({
+      mode: "CARD",
+      title: "STATS",
+      line1: l1,
+      line2: l2,
+      ttlMs: 8000,
+      sourceAnalyzer: "system",
+    });
+    setTimeout(() => this.emitListening(), 8000);
+  }
+
+  private async handleForget(): Promise<void> {
+    this.memoryStore.clearSession();
+    await this.memoryStore.deleteFile();
+    this.factsCheckedCount = 0;
+    this.contradictionsCount = 0;
+    this.onHud({
+      mode: "PASSIVE",
+      title: "MEMORY CLEARED",
+      line1: "MEMORY CLEARED",
+      ttlMs: 3000,
+      sourceAnalyzer: "system",
+    });
+    setTimeout(() => this.emitListening(), 3000);
+  }
+
+  private handleToggle(analyzerKey: string): void {
+    const analyzerName = TOGGLE_ANALYZERS[analyzerKey];
+    if (!analyzerName) {
+      console.log("[Orchestrator] unknown toggle target:", analyzerKey);
+      return;
+    }
+
+    const wasDisabled = this.disabledAnalyzers.has(analyzerName);
+    if (wasDisabled) {
+      this.disabledAnalyzers.delete(analyzerName);
+    } else {
+      this.disabledAnalyzers.add(analyzerName);
+    }
+
+    const state = wasDisabled ? "ON" : "OFF";
+    console.log("[Orchestrator] toggle:", analyzerName, state);
+
+    this.onHud({
+      mode: "PASSIVE",
+      title: `${analyzerKey.toUpperCase()}: ${state}`,
+      line1: `${analyzerKey.toUpperCase()}: ${state}`,
+      ttlMs: 3000,
+      sourceAnalyzer: "system",
+    });
+    setTimeout(() => this.emitListening(), 3000);
+  }
+
+  private async runEntityExtraction(): Promise<void> {
+    const rollingText = this.transcript.map((s) => s.text).join(" ");
+    if (rollingText.length - this.lastEntityExtractLength < 30) return;
+
+    const now = Date.now();
+    const cutoff = now - 30_000;
+    const recent = this.transcript
+      .filter((s) => s.ts >= cutoff)
+      .map((s) => s.text)
+      .join(" ");
+
+    if (recent.trim().length < 15) return;
+
+    this.lastEntityExtractLength = rollingText.length;
+
+    try {
+      const raw = await claudeRequest(
+        "claude-haiku-4-5-20251001",
+        ENTITY_EXTRACTION_SYSTEM,
+        recent,
+        undefined,
+        256,
+      );
+
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) return;
+
+      const parsed = JSON.parse(match[0]);
+      const entities: any[] = parsed.entities ?? [];
+
+      for (const e of entities) {
+        if (e.text && e.type) {
+          this.memoryStore.addEntity({
+            text: e.text,
+            type: e.type,
+            context: e.context ?? "",
+          });
+        }
+      }
+
+      if (entities.length > 0) {
+        console.log("[EntityExtractor] extracted:", entities.length, "entities");
+      }
+    } catch (err) {
+      console.warn("[EntityExtractor] error:", err);
+    }
+  }
+
   // ── Internal ──────────────────────────────────────────────────────
 
   private buildContext(): AnalyzerContext {
@@ -389,6 +547,7 @@ export class Orchestrator {
 
     for (const analyzer of due) {
       if (this.cooldown.isInCooldown(analyzer.name)) continue;
+      if (this.disabledAnalyzers.has(analyzer.name)) continue;
 
       try {
         const ctx = this.buildContext();

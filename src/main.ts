@@ -285,7 +285,7 @@ async function main(): Promise<void> {
     new TopicShiftAnalyzer(),
     new StressCuesAnalyzer(),
   ]);
-  orchestrator.start();
+  await orchestrator.start();
 
   const micOk = await bridge.audioControl(true);
   console.log("[ValidateAI] mic:", micOk);

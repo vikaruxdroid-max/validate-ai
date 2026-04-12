@@ -1,6 +1,8 @@
 import { claudeRequest } from "./claude";
 import { RECALL_SYSTEM } from "../prompts/haiku";
-import type { IMemoryStore, CommitmentEntry } from "../models/types";
+import type { IMemoryStore, CommitmentEntry, EntityEntry, EntityType } from "../models/types";
+
+const PROXY_BASE = "https://vikarux-g2.centralus.cloudapp.azure.com:3001";
 
 interface PinnedItem {
   id: string;
@@ -13,7 +15,8 @@ export class MemoryStore implements IMemoryStore {
   private pinned: PinnedItem[] = [];
   private commitments: CommitmentEntry[] = [];
   private decisions: string[] = [];
-  private entities = new Set<string>();
+  private entities: EntityEntry[] = [];
+  private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 
   pin(item: { text: string; source: string }): void {
     this.pinned.push({
@@ -82,11 +85,15 @@ export class MemoryStore implements IMemoryStore {
     return [...this.decisions];
   }
 
+  getEntities(): EntityEntry[] {
+    return [...this.entities];
+  }
+
   clearSession(): void {
     this.pinned = [];
     this.commitments = [];
     this.decisions = [];
-    this.entities.clear();
+    this.entities = [];
     console.log("[MemoryStore] session cleared");
   }
 
@@ -98,7 +105,7 @@ export class MemoryStore implements IMemoryStore {
       dueDate: entry.dueDate,
       ts: Date.now(),
     });
-    console.log("[MemoryStore] commitment:", entry.text, "owner:", entry.owner, "due:", entry.dueDate);
+    console.log("[MemoryStore] commitment:", entry.text);
   }
 
   addDecision(text: string): void {
@@ -108,12 +115,93 @@ export class MemoryStore implements IMemoryStore {
     }
   }
 
-  addEntity(name: string): void {
-    if (!this.entities.has(name)) {
-      this.entities.add(name);
-      console.log("[MemoryStore] entity:", name);
+  addEntity(entry: { text: string; type: EntityType; context: string }): void {
+    if (this.entities.some((e) => e.text === entry.text)) return;
+    this.entities.push({
+      text: entry.text,
+      type: entry.type,
+      context: entry.context,
+      ts: Date.now(),
+    });
+    console.log("[MemoryStore] entity:", entry.type, entry.text);
+  }
+
+  // ── Persistence ───────────────────────────────────────────────────
+
+  toJSON(): string {
+    return JSON.stringify({
+      pinned: this.pinned,
+      commitments: this.commitments,
+      decisions: this.decisions,
+      entities: this.entities,
+    });
+  }
+
+  loadJSON(json: string): void {
+    try {
+      const data = JSON.parse(json);
+      this.pinned = data.pinned ?? [];
+      this.commitments = data.commitments ?? [];
+      this.decisions = data.decisions ?? [];
+      this.entities = data.entities ?? [];
+      console.log("[MemoryStore] loaded from JSON — pinned:", this.pinned.length,
+        "commitments:", this.commitments.length,
+        "decisions:", this.decisions.length,
+        "entities:", this.entities.length);
+    } catch (err) {
+      console.warn("[MemoryStore] loadJSON failed:", err);
     }
   }
+
+  async save(): Promise<void> {
+    try {
+      const res = await fetch(`${PROXY_BASE}/memory/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: this.toJSON(),
+      });
+      if (!res.ok) console.warn("[MemoryStore] save failed:", res.status);
+      else console.log("[MemoryStore] saved to proxy");
+    } catch (err) {
+      console.warn("[MemoryStore] save error:", err);
+    }
+  }
+
+  async load(): Promise<void> {
+    try {
+      const res = await fetch(`${PROXY_BASE}/memory/load`);
+      if (res.ok) {
+        const json = await res.text();
+        if (json && json.trim().length > 2) this.loadJSON(json);
+      }
+    } catch (err) {
+      console.warn("[MemoryStore] load error (may not exist yet):", err);
+    }
+  }
+
+  async deleteFile(): Promise<void> {
+    try {
+      await fetch(`${PROXY_BASE}/memory`, { method: "DELETE" });
+      console.log("[MemoryStore] file deleted on proxy");
+    } catch (err) {
+      console.warn("[MemoryStore] delete error:", err);
+    }
+  }
+
+  startAutoSave(intervalMs = 60_000): void {
+    this.stopAutoSave();
+    this.autoSaveTimer = setInterval(() => this.save(), intervalMs);
+    console.log("[MemoryStore] auto-save started, interval:", intervalMs);
+  }
+
+  stopAutoSave(): void {
+    if (this.autoSaveTimer) {
+      clearInterval(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+  }
+
+  // ── Internal ──────────────────────────────────────────────────────
 
   private getAllItems(): string[] {
     return [
@@ -125,7 +213,7 @@ export class MemoryStore implements IMemoryStore {
         return `[commitment] ${parts.join(" ")}`;
       }),
       ...this.decisions.map((d) => `[decision] ${d}`),
-      ...[...this.entities].map((e) => `[entity] ${e}`),
+      ...this.entities.map((e) => `[${e.type.toLowerCase()}] ${e.text} — ${e.context}`),
     ];
   }
 }
