@@ -720,4 +720,26 @@ export class Orchestrator {
       sourceAnalyzer: "system",
     });
   }
+
+  // ── Public getters for phone companion UI ─────────────────────────
+
+  getRecentOutputs(): AnalyzerResult[] {
+    return [...this.recentOutputs];
+  }
+
+  getStats() {
+    return {
+      factsChecked: this.factsCheckedCount,
+      contradictions: this.contradictionsCount,
+      sessionStartTs: this.sessionStartTs,
+    };
+  }
+
+  getDisabledAnalyzers(): string[] {
+    return [...this.disabledAnalyzers];
+  }
+
+  getMemoryStore() {
+    return this.memoryStore;
+  }
 }

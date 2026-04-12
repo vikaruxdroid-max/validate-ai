@@ -373,6 +373,42 @@ async function main(): Promise<void> {
     }
   });
 
+  // ── Phone companion UI state bridge ──────────────────────────────
+  function updatePhoneState(): void {
+    const store = orchestrator.getMemoryStore();
+    const session = store.getSession();
+    const stats = orchestrator.getStats();
+    (window as any).validateAIState = {
+      status: isListening ? "LISTENING" : "ACTIVE",
+      recentOutputs: orchestrator.getRecentOutputs(),
+      commitments: session.commitments,
+      decisions: session.decisions,
+      entities: session.entities,
+      pinned: session.pinned,
+      stats: {
+        factsChecked: stats.factsChecked,
+        contradictions: stats.contradictions,
+        commitments: session.commitments.length,
+        decisions: session.decisions.length,
+        entities: session.entities.length,
+        sessionStartTs: stats.sessionStartTs,
+      },
+      activeAnalyzers: orchestrator.getDisabledAnalyzers(),
+      analyzerBadge: orchestrator.getAnalyzerBadge(),
+    };
+  }
+  updatePhoneState();
+  setInterval(updatePhoneState, 1000);
+
+  // Listen for trigger events from phone UI
+  window.addEventListener("validateai-trigger", ((e: CustomEvent) => {
+    const phrase = e.detail?.phrase;
+    if (phrase) {
+      console.log("[PhoneUI] trigger received:", phrase);
+      orchestrator.handleTranscript(phrase);
+    }
+  }) as EventListener);
+
   console.log("[ValidateAI] ready");
 }
 
