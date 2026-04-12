@@ -123,7 +123,7 @@ async function showError(msg: string): Promise<void> {
 // ── Deepgram (via proxy) ────────────────────────────────────────────
 
 function connectDeepgram(): void {
-  dgSocket = new WebSocket("ws://20.118.225.255:3001");
+  dgSocket = new WebSocket("wss://vikarux-g2.centralus.cloudapp.azure.com:3001");
   dgSocket.binaryType = "arraybuffer";
 
   dgSocket.onopen = () => {

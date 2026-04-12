@@ -1,8 +1,11 @@
 import "dotenv/config";
+import { readFileSync } from "fs";
+import { createServer } from "https";
 import { WebSocketServer, WebSocket } from "ws";
 
 const DG_KEY = process.env.VITE_DEEPGRAM_API_KEY;
 const PORT = 3001;
+const CERT_DIR = "/etc/letsencrypt/live/vikarux-g2.centralus.cloudapp.azure.com";
 
 if (!DG_KEY) {
   console.error("[proxy] VITE_DEEPGRAM_API_KEY not set in .env");
@@ -11,8 +14,16 @@ if (!DG_KEY) {
 
 console.log("[proxy] key length:", DG_KEY.length, "first 8:", DG_KEY.slice(0, 8));
 
-const wss = new WebSocketServer({ host: "0.0.0.0", port: PORT });
-console.log(`[proxy] listening on ws://0.0.0.0:${PORT}`);
+const httpsServer = createServer({
+  cert: readFileSync(`${CERT_DIR}/fullchain.pem`),
+  key: readFileSync(`${CERT_DIR}/privkey.pem`),
+});
+
+const wss = new WebSocketServer({ server: httpsServer });
+
+httpsServer.listen(PORT, "0.0.0.0", () => {
+  console.log(`[proxy] listening on wss://0.0.0.0:${PORT}`);
+});
 
 wss.on("connection", (browser) => {
   console.log("[proxy] browser connected, opening Deepgram upstream");
