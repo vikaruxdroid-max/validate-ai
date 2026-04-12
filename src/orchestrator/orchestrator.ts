@@ -353,7 +353,7 @@ export class Orchestrator {
     this.onHud({
       mode: "CARD",
       title: "CHECKING",
-      line1: "CHECKING...",
+      line1: "C...",
       ttlMs: 30_000,
       sourceAnalyzer: "system",
     });
@@ -605,7 +605,7 @@ export class Orchestrator {
     this.onHud({
       mode: "CARD",
       title: "CHECKING",
-      line1: "CHECKING...",
+      line1: "C...",
       ttlMs: 30_000,
       sourceAnalyzer: analyzer.name,
     });
@@ -715,7 +715,7 @@ export class Orchestrator {
     this.onHud({
       mode: "LISTENING",
       title: "LISTENING",
-      line1: "LISTENING...",
+      line1: "L...",
       ttlMs: 0,
       sourceAnalyzer: "system",
     });

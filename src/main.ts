@@ -93,7 +93,7 @@ function makeTextContainers(mainContent: string): TextContainerProperty[] {
 async function initDisplay(): Promise<void> {
   const container = {
     containerTotalNum: 2,
-    textObject: makeTextContainers("LISTENING..."),
+    textObject: makeTextContainers("L..."),
   };
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -132,7 +132,7 @@ const VERDICT_ICON: Record<Verdict, string> = {
 let orchestrator: Orchestrator;
 
 function getListeningText(): string {
-  const dots = heartbeatTick ? "LISTENING..." : "LISTENING";
+  const dots = heartbeatTick ? "L..." : "L";
   const badge = orchestrator?.getAnalyzerBadge?.() ?? "";
   return badge ? `${dots}\n${badge}` : dots;
 }
@@ -241,7 +241,7 @@ function renderHud(payload: HudPayload): void {
   }
 
   if (payload.title === "CHECKING") {
-    updateText("CHECKING...");
+    updateText("C...");
     return;
   }
 
@@ -349,7 +349,7 @@ async function main(): Promise<void> {
     updateText(`WELCOME BACK\n\n${memoryItemCount} items in memory`);
     await delay(4000);
   } else {
-    updateText("READY");
+    updateText("R");
     await delay(2000);
   }
 
@@ -374,11 +374,14 @@ async function main(): Promise<void> {
   });
 
   // ── Phone companion UI state bridge ──────────────────────────────
+  let stateVersion = 0;
   function updatePhoneState(): void {
     const store = orchestrator.getMemoryStore();
     const session = store.getSession();
     const stats = orchestrator.getStats();
+    stateVersion++;
     (window as any).validateAIState = {
+      version: stateVersion,
       status: isListening ? "LISTENING" : "ACTIVE",
       recentOutputs: orchestrator.getRecentOutputs(),
       commitments: session.commitments,
@@ -398,7 +401,26 @@ async function main(): Promise<void> {
     };
   }
   updatePhoneState();
-  setInterval(updatePhoneState, 1000);
+  setInterval(updatePhoneState, 250);
+
+  // ── HUD watchdog: force LISTENING if stuck past TTL ─────────────
+  let lastHudChangeTs = Date.now();
+  const originalRenderHud = renderHud;
+  renderHud = function watchdogRenderHud(payload: HudPayload) {
+    lastHudChangeTs = Date.now();
+    originalRenderHud(payload);
+  };
+  setInterval(() => {
+    if (!isListening && Date.now() - lastHudChangeTs > 15_000) {
+      console.warn("[Watchdog] HUD stuck, forcing LISTENING");
+      stopHeartbeat();
+      heartbeatTick = true;
+      updateText(getListeningText());
+      updatePassive("");
+      startHeartbeat();
+      lastHudChangeTs = Date.now();
+    }
+  }, 5000);
 
   // Listen for trigger events from phone UI
   window.addEventListener("validateai-trigger", ((e: CustomEvent) => {
