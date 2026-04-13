@@ -18,6 +18,7 @@ import {
 } from "./analyzers";
 import type { HudPayload, Verdict, PersonaBrief, PersonaSignalSnapshot } from "./models/types";
 import { claudeRequest } from "./services/claude";
+import { CLAUDE_SONNET } from "./utils/models";
 
 // ── Config ──────────────────────────────────────────────────────────
 const DISPLAY_W = 576;
@@ -70,7 +71,6 @@ async function initDisplay(): Promise<void> {
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const result = await bridge.createStartUpPageContainer(container);
-    console.log("[Display] attempt", attempt, "result:", result);
     if (result === 0) return;
     await delay(500);
   }
@@ -149,7 +149,6 @@ async function showListContainer(items: string[]): Promise<void> {
     containerTotalNum: 1,
     listObject: [listProp],
   });
-  console.log("[Display] list shown with", items.length, "items");
 }
 
 async function restoreTextContainer(): Promise<void> {
@@ -176,7 +175,6 @@ async function restoreTextContainer(): Promise<void> {
     ],
   });
   startHeartbeat();
-  console.log("[Display] text container restored");
 }
 
 // ── HUD rendering ───────────────────────────────────────────────────
@@ -236,12 +234,22 @@ function renderHud(payload: HudPayload): void {
 
 // ── Deepgram (via proxy) ────────────────────────────────────────────
 
+const RECONNECT_DELAYS = [2000, 4000, 8000, 16000, 60000];
+let reconnectAttempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleReconnect(): void {
+  const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+  reconnectAttempt++;
+  reconnectTimer = setTimeout(connectDeepgram, delay);
+}
+
 function connectDeepgram(): void {
   dgSocket = new WebSocket("wss://vikarux-g2.centralus.cloudapp.azure.com:3001");
   dgSocket.binaryType = "arraybuffer";
 
   dgSocket.onopen = () => {
-    console.log("[DG] open");
+    reconnectAttempt = 0; // Reset backoff on successful connection
     dgReady = true;
     for (const chunk of dgPendingBuffer) dgSocket!.send(chunk);
     dgPendingBuffer.length = 0;
@@ -270,7 +278,7 @@ function connectDeepgram(): void {
 
   dgSocket.onclose = () => {
     dgReady = false;
-    setTimeout(connectDeepgram, 2000);
+    scheduleReconnect();
   };
 
   dgSocket.onerror = () => { dgReady = false; };
@@ -290,7 +298,6 @@ async function main(): Promise<void> {
   console.log("[ValidateAI] starting");
 
   bridge = await waitForEvenAppBridge();
-  console.log("[ValidateAI] bridge ready");
 
   await initDisplay();
 
@@ -318,7 +325,6 @@ async function main(): Promise<void> {
   startHeartbeat();
 
   const micOk = await bridge.audioControl(true);
-  console.log("[ValidateAI] mic:", micOk);
 
   connectDeepgram();
 
@@ -327,7 +333,6 @@ async function main(): Promise<void> {
       sendAudio(event.audioEvent.audioPcm);
     }
     if (event.listEvent && listDismissTimer) {
-      console.log("[Display] list event received, dismissing list");
       restoreTextContainer();
     }
   });
@@ -354,23 +359,31 @@ async function main(): Promise<void> {
     const openCommits = relevantCommits.filter(c => !statuses[c.text]);
     const lastSession = linkedSessions[0]; // sorted newest first
 
+    // Sort artifacts by importance_score DESC, cap at 20 per type
+    const sortByImportance = <T extends { importanceScore?: number }>(arr: T[]) =>
+      [...arr].sort((a, b) => (b.importanceScore ?? 0) - (a.importanceScore ?? 0)).slice(0, 20);
+    const topCommits = sortByImportance(relevantCommits);
+    const topEntities = sortByImportance(linkedEntities);
+
     const artifactPayload = JSON.stringify({
       persona: { name: persona.name, aliases: persona.aliases, notes: persona.notes, sessionCount: sids.length },
       sessions: linkedSessions.map(s => ({ label: s.label, startedAt: s.startedAt, endedAt: s.endedAt, stats: s.stats })),
-      commitments: relevantCommits.map(c => ({ text: c.text, owner: c.owner, dueDate: c.dueDate, done: !!statuses[c.text] })),
-      entities: linkedEntities.slice(0, 30).map(e => ({ text: e.text, type: e.type, context: e.context })),
+      commitments: topCommits.map(c => ({ text: c.text, owner: c.owner, dueDate: c.dueDate, done: !!statuses[c.text], score: c.importanceScore })),
+      entities: topEntities.map(e => ({ text: e.text, type: e.type, context: e.context, score: e.importanceScore })),
       signalSnapshots: persona.signalSnapshots || [],
     });
 
-    const system = `You analyze conversation artifacts about a person and generate a structured pre-conversation brief. Focus on actionable insights. Be concise. Frame all observations as patterns, never character assessments. Return ONLY valid JSON with fields: who (string), lastInteraction (string), openCommitments (string[]), openQuestions (string[]), signals (string[]), behavioralPatterns (array of {signal, observation, confidence, evidenceCount, caveat}), suggestedFollowUps (string[]), nextSteps (string[]).`;
+    const isSelf = persona.isSelf === true;
+    const system = isSelf
+      ? `You generate a personal intelligence summary for a user reviewing their own conversation history. Return ONLY valid JSON with fields: recentActivity (string), openCommitments (string[]), peopleYouInteractWith (array of {name, count}), communicationPatterns (string), whatChangedRecently (string), suggestedFollowUps (string[]).`
+      : `You analyze conversation artifacts about a person and generate a structured pre-conversation brief. Focus on actionable insights. Be concise. Frame all observations as patterns, never character assessments. Return ONLY valid JSON with fields: who (string), lastInteraction (string), openCommitments (string[]), openQuestions (string[]), signals (string[]), behavioralPatterns (array of {signal, observation, confidence, evidenceCount, caveat}), suggestedFollowUps (string[]), nextSteps (string[]).`;
     try {
-      const raw = await claudeRequest("claude-sonnet-4-20250514", system,
+      const raw = await claudeRequest(CLAUDE_SONNET, system,
         `Person: ${persona.name}\nArtifacts:\n${artifactPayload}`, undefined, 1024);
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
-        const brief: PersonaBrief = { ...JSON.parse(match[0]), generatedAt: Date.now() };
+        const brief: PersonaBrief = { ...JSON.parse(match[0]), generatedAt: Date.now(), type: isSelf ? "self_summary" : "standard" };
         store.setPersonaBrief(personaId, brief);
-        console.log("[Brief] generated for:", persona.name);
       }
     } catch (err) { console.warn("[Brief] generation failed:", err); }
   }
@@ -447,10 +460,12 @@ async function main(): Promise<void> {
       commitmentStatuses: store.getCommitmentStatuses(),
       briefLoadingPid,
       personaUpdates,
+      selfPersonaId: orchestrator.getSelfPersonaId(),
+      selfPersonaName: orchestrator.getSelfPersonaName(),
     };
   }
   updatePhoneState();
-  setInterval(updatePhoneState, 250);
+  const statePollingTimer = setInterval(updatePhoneState, 250);
 
   // ── HUD watchdog: force L. if stuck past 6 seconds ────────────────
   let lastHudChangeTs = Date.now();
@@ -459,7 +474,7 @@ async function main(): Promise<void> {
     lastHudChangeTs = Date.now();
     originalRenderHud(payload);
   };
-  setInterval(() => {
+  const watchdogTimer = setInterval(() => {
     if (!isListening && Date.now() - lastHudChangeTs > 6000) {
       console.warn("[Watchdog] HUD stuck, forcing L.");
       startHeartbeat();
@@ -471,7 +486,6 @@ async function main(): Promise<void> {
   window.addEventListener("validateai-trigger", ((e: CustomEvent) => {
     const phrase = e.detail?.phrase;
     if (phrase) {
-      console.log("[PhoneUI] trigger received:", phrase);
       orchestrator.handleTranscript(phrase);
     }
   }) as EventListener);
@@ -482,14 +496,14 @@ async function main(): Promise<void> {
     const store = orchestrator.getMemoryStore();
     if (action === "START") {
       const id = store.startSession();
-      console.log("[PhoneUI] session started:", id);
+      orchestrator.resetSelfDetection();
     } else if (action === "END") {
       const activeId = store.getCurrentSessionId();
       const stats = orchestrator.getStats();
       store.endSession(stats.factsChecked, stats.contradictions);
       if (activeId) computePostSessionUpdates(activeId);
+      orchestrator.clearSelfPersona();
       store.save();
-      console.log("[PhoneUI] session ended and saved");
     }
     updatePhoneState();
   }) as EventListener);
@@ -503,10 +517,8 @@ async function main(): Promise<void> {
       if (sessionId) store.linkArtifactToPersona(persona.id, sessionId);
       store.retroactiveLinkPersona(persona.id);
       orchestrator.clearPendingPersonaDetection();
-      console.log("[PhoneUI] persona created:", name);
     } else if (action === "SKIP") {
       orchestrator.clearPendingPersonaDetection();
-      console.log("[PhoneUI] persona detection skipped");
     } else if (action === "BRIEF") {
       briefLoadingPid = personaId;
       updatePhoneState();
@@ -515,7 +527,6 @@ async function main(): Promise<void> {
     } else if (action === "UPDATE") {
       if (personaId && updates) store.updatePersona(personaId, updates);
       store.save();
-      console.log("[PhoneUI] persona updated:", personaId);
     } else if (action === "TOGGLE_COMMITMENT") {
       const { commitmentText, done } = e.detail;
       store.setCommitmentStatus(commitmentText, done);

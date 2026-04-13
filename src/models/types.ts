@@ -48,12 +48,28 @@ export interface AcousticFeatureWindow {
 
 // ── Memory store interface ───────────────────────────────────────────
 
+export type SourceTier = "STATED" | "INFERRED" | "PATTERN";
+
 export interface CommitmentEntry {
   text: string;
   owner?: string;
   dueDate?: string;
   ts: number;
   sessionId?: string;
+  sourceText?: string;
+  sourceTier?: SourceTier;
+  importanceScore?: number;
+  confirmationCount?: number;
+}
+
+export interface DecisionEntry {
+  text: string;
+  ts: number;
+  sessionId?: string;
+  sourceTier?: SourceTier;
+  importanceScore?: number;
+  confirmationCount?: number;
+  sourceText?: string;
 }
 
 export type EntityType = "PERSON" | "DATE" | "NUMBER" | "PLACE" | "ORGANIZATION";
@@ -64,6 +80,9 @@ export interface EntityEntry {
   context: string;
   ts: number;
   sessionId?: string;
+  sourceTier?: SourceTier;
+  importanceScore?: number;
+  confirmationCount?: number;
 }
 
 export interface PinnedItem {
@@ -90,6 +109,7 @@ export interface SessionEntry {
 }
 
 export interface PersonaBrief {
+  type?: "standard" | "self_summary";
   who: string;
   lastInteraction: string;
   openCommitments: string[];
@@ -105,6 +125,11 @@ export interface PersonaBrief {
   suggestedFollowUps: string[];
   nextSteps: string[];
   generatedAt: number;
+  // Self-summary fields (only present when type === "self_summary")
+  recentActivity?: string;
+  peopleYouInteractWith?: Array<{ name: string; count: number }>;
+  communicationPatterns?: string;
+  whatChangedRecently?: string;
 }
 
 export interface PersonaSignalSnapshot {
@@ -125,9 +150,21 @@ export interface Persona {
   lastSeenAt: string;
   sessionIds: string[];
   notes: string;
+  isSelf?: boolean;
   brief?: PersonaBrief;
   signalSnapshots?: PersonaSignalSnapshot[];
 }
+
+export interface SelfPersonaState {
+  personaId: string;
+  personaName: string;
+  activatedAt: string;
+  sessionId: string;
+}
+
+// window.validateAIState additions for self persona:
+//   selfPersonaId: string | null
+//   selfPersonaName: string | null
 
 export interface IMemoryStore {
   pin(item: { text: string; source: string }, sessionId?: string): void;

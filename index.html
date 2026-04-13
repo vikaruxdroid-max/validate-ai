@@ -212,6 +212,10 @@ ul{list-style:none}
 .p-badges{display:flex;gap:var(--s1);margin-top:var(--s1)}
 .p-brief-btn{min-width:40px;min-height:40px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-sm);border:1px solid var(--border-2);color:var(--text-2);flex-shrink:0;font-size:16px;transition:all .12s}
 .p-brief-btn:active{background:var(--surface-4);color:var(--accent)}
+.p-card.p-self .p-avatar{background:var(--accent);color:var(--text-inv)}
+.tier-badge{display:inline-flex;font:600 9px/1 var(--font-mono);padding:2px 5px;border-radius:var(--r-full);letter-spacing:.04em;margin-right:var(--s1);vertical-align:middle}
+.tier-stated{background:rgba(0,217,126,.15);color:var(--ok)}.tier-inferred{background:rgba(74,158,255,.15);color:var(--info)}.tier-pattern{background:rgba(155,109,255,.15);color:var(--purple)}
+.p-you-badge{display:inline-flex;font:600 var(--fs-xs)/1 var(--font-mono);padding:2px 6px;border-radius:var(--r-full);background:var(--accent-dim);color:var(--accent);margin-left:var(--s2);vertical-align:middle}
 
 /* ═══ PERSONA DETAIL (scrollable single page) ═══ */
 .pd-screen{display:none}
@@ -398,6 +402,15 @@ ul{list-style:none}
 .sess-end{background:rgba(255,75,75,.1);border:1px solid rgba(255,75,75,.3);color:var(--danger)}
 .sess-stat-row{display:flex;justify-content:space-between;padding:var(--s2) 0;font:400 var(--fs-sm)/1 var(--font-mono);color:var(--text-2);border-bottom:1px solid var(--border-1)}
 
+/* ═══ DEV TOOLS ═══ */
+.dev-btn{display:block;width:100%;min-height:var(--tap);font:500 var(--fs-sm)/1 var(--font-mono);border:1px solid var(--border-2);border-radius:var(--r-md);background:var(--surface-2);color:var(--text-1);text-align:center;margin-bottom:var(--s2);transition:all .12s}
+.dev-btn:active{background:var(--surface-4)}
+.dev-btn-danger{border-color:rgba(255,75,75,.3);color:var(--danger);background:rgba(255,75,75,.08)}
+.dev-stats{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);margin-bottom:var(--s3)}
+.dev-stat{background:var(--surface-1);border:1px solid var(--border-1);border-radius:var(--r-sm);padding:var(--s2) var(--s3)}
+.dev-stat-n{font:700 var(--fs-md)/1 var(--font-mono);color:var(--text-1)}
+.dev-stat-l{font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:2px}
+
 /* ═══ RESPONSIVE ═══ */
 @media(min-width:430px){.snap-grid-inner{grid-template-columns:repeat(3,1fr)}}
 </style>
@@ -481,8 +494,18 @@ ul{list-style:none}
   <div class="sl">CONNECTION</div>
   <div id="svc-list"></div>
   <div class="danger-zone">
-    <div class="sl" style="color:var(--danger);padding-top:0">DANGER ZONE</div>
+    <div class="sl" style="color:var(--danger);padding-top:0" id="dz-label">DANGER ZONE</div>
     <button class="btn-danger" id="forget-btn">FORGET ALL MEMORY</button>
+  </div>
+  <div id="dev-tools" style="display:none">
+    <div class="sl" style="color:var(--info);padding-top:var(--s5)">DEVELOPER TOOLS</div>
+    <button class="dev-btn" id="dev-sim-self">Simulate Self Detection</button>
+    <button class="dev-btn" id="dev-sim-conv">Simulate Conversation</button>
+    <button class="dev-btn" id="dev-sim-contra">Simulate Contradiction</button>
+    <div class="sl" style="padding-top:var(--s4)">DATABASE STATS</div>
+    <div class="dev-stats" id="dev-stats"></div>
+    <button class="dev-btn" id="dev-export">Export Database</button>
+    <button class="dev-btn dev-btn-danger" id="dev-reset">Reset All Data</button>
   </div>
 </div>
 
@@ -507,6 +530,7 @@ ul{list-style:none}
 
 <!-- ═══ MODALS ═══ -->
 <div class="modal-bg" id="forget-modal"><div class="modal"><h3 style="color:var(--danger)">FORGET ALL MEMORY</h3><p>This erases all stored commitments, decisions, entities, and session data permanently.</p><div class="modal-btns"><button class="m-cancel" id="fm-no">CANCEL</button><button class="m-ok" id="fm-yes">FORGET</button></div></div></div>
+<div class="modal-bg" id="reset-modal"><div class="modal"><h3 style="color:var(--danger)">Reset All Data</h3><p>This permanently deletes all sessions, commitments, decisions, entities, contradictions, personas, and signal data. This cannot be undone.</p><input class="edit-input" id="reset-input" type="text" placeholder='Type RESET to confirm' style="margin-bottom:var(--s3)"/><div class="modal-btns"><button class="m-cancel" id="reset-no">Cancel</button><button class="m-ok" id="reset-yes" disabled>CONFIRM</button></div></div></div>
 <div class="modal-bg" id="sess-modal"><div class="modal"><h3 style="color:var(--accent)">END SESSION</h3><p>End this session? All artifacts will be saved.</p><div class="modal-btns"><button class="m-cancel" id="sm-no">CANCEL</button><button class="m-ok m-ok-accent" id="sm-yes">CONFIRM</button></div></div></div>
 
 <!-- ═══ BRIEF FULL SCREEN ═══ -->
@@ -596,6 +620,7 @@ function openSheet(id){closeAllSheets();document.getElementById(id).classList.ad
 function openDetail(html){document.getElementById("detail-body").innerHTML=html;openSheet("detail-bg")}
 
 function matchNames(text,p){var names=[p.name.toLowerCase()].concat((p.aliases||[]).map(function(a){return a.toLowerCase()}));var tl=(text||"").toLowerCase();return names.some(function(n){return tl.indexOf(n)!==-1})}
+function tierBadge(tier){if(!tier)return"";var cls=tier==="STATED"?"tier-stated":tier==="PATTERN"?"tier-pattern":"tier-inferred";return'<span class="tier-badge '+cls+'">'+tier+'</span>'}
 
 /* ═══ KEYBOARD INSET ═══ */
 if(window.visualViewport){var vv=window.visualViewport;vv.addEventListener("resize",function(){var inset=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);document.documentElement.style.setProperty("--kb-inset",inset+"px")})}
@@ -735,24 +760,34 @@ function openBrief(pid){
 function renderBriefBody(p){
   var body=document.getElementById("brief-body");
   if(!p.brief){
-    var h='<div class="sl" style="padding-top:var(--s4)">WHO</div><div class="brief-card"><div class="skel skel-line w90"></div><div class="skel skel-line w70"></div><div class="skel skel-line w80"></div></div>';
-    h+='<div class="sl">LAST INTERACTION</div><div class="brief-card"><div class="skel skel-line w80"></div><div class="skel skel-line w60"></div></div>';
-    h+='<div class="sl">OPEN ITEMS</div><div class="brief-card"><div class="skel skel-line w90"></div><div class="skel skel-line w70"></div></div>';
-    h+='<div class="sl">CONVERSATION STARTERS</div><div class="brief-card"><div class="skel skel-line w80"></div><div class="skel skel-line w60"></div></div>';
+    var s1=p.isSelf?"RECENT ACTIVITY":"WHO",s2=p.isSelf?"OPEN COMMITMENTS":"LAST INTERACTION",s3=p.isSelf?"PEOPLE YOU INTERACT WITH":"OPEN ITEMS";
+    var h='<div class="sl" style="padding-top:var(--s4)">'+s1+'</div><div class="brief-card"><div class="skel skel-line w90"></div><div class="skel skel-line w70"></div><div class="skel skel-line w80"></div></div>';
+    h+='<div class="sl">'+s2+'</div><div class="brief-card"><div class="skel skel-line w80"></div><div class="skel skel-line w60"></div></div>';
+    h+='<div class="sl">'+s3+'</div><div class="brief-card"><div class="skel skel-line w90"></div><div class="skel skel-line w70"></div></div>';
     body.innerHTML=h;document.getElementById("brief-age").textContent="Generating...";return;
   }
   var b=p.brief,ago=Math.floor((Date.now()-(b.generatedAt||0))/60000);
   document.getElementById("brief-age").textContent="Refreshed "+ago+" min ago";
   var h="";
-  h+='<div class="brief-section"><div class="sl" style="padding-top:var(--s4)">WHO</div><div class="brief-card"><p>'+esc(b.who||"No summary available")+'</p></div></div>';
-  h+='<div class="brief-section"><div class="sl">LAST INTERACTION</div><div class="brief-card"><p>'+esc(b.lastInteraction||"No prior sessions")+'</p></div></div>';
-  if(b.openCommitments&&b.openCommitments.length){h+='<div class="brief-section"><div class="sl">OPEN ITEMS</div><div class="brief-card"><ul>';b.openCommitments.forEach(function(c){h+='<li class="action">'+esc(c)+'</li>'});if(b.openQuestions)b.openQuestions.forEach(function(q){h+='<li>'+esc(q)+'</li>'});h+='</ul></div></div>'}
-  if(b.suggestedFollowUps&&b.suggestedFollowUps.length){h+='<div class="brief-section"><div class="sl">CONVERSATION STARTERS</div><div class="brief-card"><ul class="numbered">';b.suggestedFollowUps.forEach(function(f){h+='<li>'+esc(f)+'</li>'});h+='</ul></div></div>'}
-  if(b.behavioralPatterns&&b.behavioralPatterns.length){h+='<div class="brief-section"><div class="sl">BEHAVIORAL NOTES</div><div class="brief-card">';
-    b.behavioralPatterns.forEach(function(bp){var tier=bp.confidence==="HIGH"?"stated":bp.confidence==="MED"?"inferred":"pattern";
-      h+='<div style="margin-bottom:var(--s3)"><span class="sig-tier '+tier+'">'+esc(bp.confidence)+'</span> <strong>'+esc(bp.signal)+'</strong><br><span style="color:var(--text-2)">'+esc(bp.observation)+'</span><br><span style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3)">'+bp.evidenceCount+' observations &middot; '+esc(bp.caveat)+'</span></div>'});
-    h+='</div></div>'}
-  if(b.nextSteps&&b.nextSteps.length){h+='<div class="brief-section"><div class="sl">NEXT STEPS</div><div class="brief-card"><ul>';b.nextSteps.forEach(function(n){h+='<li class="action">'+esc(n)+'</li>'});h+='</ul></div></div>'}
+  if(b.type==="self_summary"){
+    h+='<div class="brief-section"><div class="sl" style="padding-top:var(--s4)">RECENT ACTIVITY</div><div class="brief-card"><p>'+esc(b.recentActivity||b.who||"No recent activity")+'</p></div></div>';
+    if(b.openCommitments&&b.openCommitments.length){h+='<div class="brief-section"><div class="sl">OPEN COMMITMENTS</div><div class="brief-card"><ul>';b.openCommitments.forEach(function(c){h+='<li class="action">'+esc(c)+'</li>'});h+='</ul></div></div>'}
+    if(b.peopleYouInteractWith&&b.peopleYouInteractWith.length){h+='<div class="brief-section"><div class="sl">PEOPLE YOU INTERACT WITH</div><div class="brief-card">';
+      b.peopleYouInteractWith.forEach(function(pi){h+='<div style="display:flex;justify-content:space-between;padding:var(--s1) 0;font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)"><span>'+esc(pi.name)+'</span><span style="font:var(--fs-xs) var(--font-mono);color:var(--text-3)">'+pi.count+' session'+(pi.count!==1?"s":"")+'</span></div>'});h+='</div></div>'}
+    if(b.communicationPatterns){h+='<div class="brief-section"><div class="sl">YOUR COMMUNICATION PATTERNS</div><div class="brief-card"><p>'+esc(b.communicationPatterns)+'</p></div></div>'}
+    if(b.whatChangedRecently){h+='<div class="brief-section"><div class="sl">WHAT CHANGED RECENTLY</div><div class="brief-card"><p>'+esc(b.whatChangedRecently)+'</p></div></div>'}
+    if(b.suggestedFollowUps&&b.suggestedFollowUps.length){h+='<div class="brief-section"><div class="sl">SUGGESTED FOLLOW-UPS</div><div class="brief-card"><ul class="numbered">';b.suggestedFollowUps.forEach(function(f){h+='<li>'+esc(f)+'</li>'});h+='</ul></div></div>'}
+  }else{
+    h+='<div class="brief-section"><div class="sl" style="padding-top:var(--s4)">WHO</div><div class="brief-card"><p>'+esc(b.who||"No summary available")+'</p></div></div>';
+    h+='<div class="brief-section"><div class="sl">LAST INTERACTION</div><div class="brief-card"><p>'+esc(b.lastInteraction||"No prior sessions")+'</p></div></div>';
+    if(b.openCommitments&&b.openCommitments.length){h+='<div class="brief-section"><div class="sl">OPEN ITEMS</div><div class="brief-card"><ul>';b.openCommitments.forEach(function(c){h+='<li class="action">'+esc(c)+'</li>'});if(b.openQuestions)b.openQuestions.forEach(function(q){h+='<li>'+esc(q)+'</li>'});h+='</ul></div></div>'}
+    if(b.suggestedFollowUps&&b.suggestedFollowUps.length){h+='<div class="brief-section"><div class="sl">CONVERSATION STARTERS</div><div class="brief-card"><ul class="numbered">';b.suggestedFollowUps.forEach(function(f){h+='<li>'+esc(f)+'</li>'});h+='</ul></div></div>'}
+    if(b.behavioralPatterns&&b.behavioralPatterns.length){h+='<div class="brief-section"><div class="sl">BEHAVIORAL NOTES</div><div class="brief-card">';
+      b.behavioralPatterns.forEach(function(bp){var tier=bp.confidence==="HIGH"?"stated":bp.confidence==="MED"?"inferred":"pattern";
+        h+='<div style="margin-bottom:var(--s3)"><span class="sig-tier '+tier+'">'+esc(bp.confidence)+'</span> <strong>'+esc(bp.signal)+'</strong><br><span style="color:var(--text-2)">'+esc(bp.observation)+'</span><br><span style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3)">'+bp.evidenceCount+' observations &middot; '+esc(bp.caveat)+'</span></div>'});
+      h+='</div></div>'}
+    if(b.nextSteps&&b.nextSteps.length){h+='<div class="brief-section"><div class="sl">NEXT STEPS</div><div class="brief-card"><ul>';b.nextSteps.forEach(function(n){h+='<li class="action">'+esc(n)+'</li>'});h+='</ul></div></div>'}
+  }
   body.innerHTML=h;
 }
 
@@ -1060,10 +1095,13 @@ function rPersonas(S){
   var personas=S.personas||[];
   if(!personas.length){pL.innerHTML="";pE.style.display="";return}
   pE.style.display="none";
-  var sorted=personas.slice().sort(function(a,b){return new Date(b.lastSeenAt).getTime()-new Date(a.lastSeenAt).getTime()});
+  var sorted=personas.slice().sort(function(a,b){
+    if(a.isSelf&&!b.isSelf)return-1;if(!a.isSelf&&b.isSelf)return 1;
+    return new Date(b.lastSeenAt).getTime()-new Date(a.lastSeenAt).getTime()});
   var cSt=S.commitmentStatuses||{};
   var h="";
   sorted.forEach(function(p){
+    var isSelf=!!p.isSelf;
     var sessCount=p.sessionIds?p.sessionIds.length:0;
     var role="";if(p.notes){var m=p.notes.match(/^[^\n.!?]{0,60}/);if(m)role=m[0]}
     var badges=[];
@@ -1071,9 +1109,9 @@ function rPersonas(S){
     if(openC>0)badges.push('<span class="badge badge-warn">'+openC+' open</span>');
     var snaps=p.signalSnapshots||[];var totC=0;snaps.forEach(function(s){totC+=s.contradictions||0});
     if(totC>0)badges.push('<span class="badge badge-danger">'+totC+' flag'+(totC>1?"s":"")+'</span>');
-    h+='<div class="p-card" data-pid="'+esc(p.id)+'">';
+    h+='<div class="p-card'+(isSelf?" p-self":"")+'" data-pid="'+esc(p.id)+'">';
     h+='<div class="p-avatar">'+initials(p.name)+'</div>';
-    h+='<div class="p-info"><div class="p-name">'+esc(p.name)+'</div>';
+    h+='<div class="p-info"><div class="p-name">'+esc(p.name)+(isSelf?'<span class="p-you-badge">YOU</span>':'')+'</div>';
     if(role)h+='<div class="p-role">'+esc(role)+'</div>';
     h+='<div class="p-meta">Last seen '+formatTime(p.lastSeenAt)+' \u00b7 '+sessCount+' session'+(sessCount!==1?"s":"")+'</div>';
     if(badges.length)h+='<div class="p-badges">'+badges.slice(0,2).join("")+'</div>';
@@ -1103,9 +1141,9 @@ function renderPD(){
 
   var allNames=[p.name.toLowerCase()].concat((p.aliases||[]).map(function(a){return a.toLowerCase()}));
   function mn(t){var tl=(t||"").toLowerCase();return allNames.some(function(n){return tl.indexOf(n)!==-1})}
-  var relC=allCommits.filter(function(c){return mn(c.text)||mn(c.owner)});
-  var relD=allDecisions.filter(function(d){return mn(d.text||d)});
-  var relE=allEntities.filter(function(e){return mn(e.text)||mn(e.context)});
+  var relC=allCommits.filter(function(c){return mn(c.text)||mn(c.owner)}).sort(function(a,b){return(b.importanceScore||0)-(a.importanceScore||0)});
+  var relD=allDecisions.filter(function(d){return mn(d.text||d)}).sort(function(a,b){return(b.importanceScore||0)-(a.importanceScore||0)});
+  var relE=allEntities.filter(function(e){return mn(e.text)||mn(e.context)}).sort(function(a,b){return(b.importanceScore||0)-(a.importanceScore||0)});
   var cSt=S.commitmentStatuses||{};
   var openC=relC.filter(function(c){return!cSt[c.text]});
   var doneC=relC.filter(function(c){return cSt[c.text]});
@@ -1158,22 +1196,23 @@ function renderPD(){
     if(openC.length){h+='<div class="sd-grp">OPEN</div>';openC.forEach(function(c){
       var isOd=false;if(c.dueDate){var dd=new Date(c.dueDate);if(!isNaN(dd.getTime())&&dd.getTime()<Date.now())isOd=true}
       var meta=[];if(c.owner)meta.push(esc(c.owner));if(c.dueDate)meta.push("by "+esc(c.dueDate));if(c.ts)meta.push(formatTime(c.ts));
-      h+='<div class="sd-item" style="align-items:center"><div class="sd-item-body"><div class="sd-item-text">'+esc(c.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(" &middot; ")+'</div>':'')+'</div><button class="c-toggle '+(isOd?"overdue":"pending")+'" data-ct="'+esc(c.text)+'" data-done="0">'+(isOd?"OVERDUE":"PENDING")+'</button></div>'})}
+      h+='<div class="sd-item" style="align-items:center">'+tierBadge(c.sourceTier)+'<div class="sd-item-body"><div class="sd-item-text">'+esc(c.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(" &middot; ")+'</div>':'')+'</div><button class="c-toggle '+(isOd?"overdue":"pending")+'" data-ct="'+esc(c.text)+'" data-done="0">'+(isOd?"OVERDUE":"PENDING")+'</button></div>'})}
     if(doneC.length){h+='<div class="sd-grp">DONE</div>';doneC.forEach(function(c){
       var meta=[];if(c.owner)meta.push(esc(c.owner));if(c.ts)meta.push(formatTime(c.ts));
-      h+='<div class="sd-item" style="align-items:center"><div class="sd-item-body"><div class="sd-item-text">'+esc(c.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(" &middot; ")+'</div>':'')+'</div><button class="c-toggle done" data-ct="'+esc(c.text)+'" data-done="1">DONE</button></div>'})}
+      h+='<div class="sd-item" style="align-items:center">'+tierBadge(c.sourceTier)+'<div class="sd-item-body"><div class="sd-item-text">'+esc(c.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(" &middot; ")+'</div>':'')+'</div><button class="c-toggle done" data-ct="'+esc(c.text)+'" data-done="1">DONE</button></div>'})}
   }
 
   /* F: Evidence Log */
   var evidence=[];
-  relD.forEach(function(d){evidence.push({t:"decision",text:d.text||d,ts:d.ts||0,sid:d.sessionId})});
-  (S.recentOutputs||[]).filter(function(o){return o.analyzer==="factValidation"&&o.triggered}).forEach(function(f){evidence.push({t:"fact",text:f.title+" \u2014 "+f.summary,ts:0,conf:f.confidence,verdict:f.details&&f.details.verdict})});
+  relD.forEach(function(d){evidence.push({t:"decision",text:d.text||d,ts:d.ts||0,sid:d.sessionId,tier:d.sourceTier,score:d.importanceScore||5})});
+  (S.recentOutputs||[]).filter(function(o){return o.analyzer==="factValidation"&&o.triggered}).forEach(function(f){evidence.push({t:"fact",text:f.title+" \u2014 "+f.summary,ts:0,conf:f.confidence,verdict:f.details&&f.details.verdict,tier:"STATED",score:8})});
+  evidence.sort(function(a,b){return(b.score||0)-(a.score||0)});
   h+='<div class="sl">EVIDENCE ('+evidence.length+')</div>';
   if(!evidence.length)h+='<div style="font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-3);padding:var(--s2) 0">No decisions or fact checks recorded</div>';
   else evidence.forEach(function(ev){
     var badge=ev.t==="fact"?(ev.verdict==="SUPPORTED"?"badge-ok":ev.verdict==="DISPUTED"?"badge-danger":"badge-warn"):"badge-info";
     var label=ev.t==="fact"?(ev.verdict||"FACT"):"DECISION";
-    h+='<div class="sd-item"><span class="badge '+badge+'">'+label+'</span><div class="sd-item-body"><div class="sd-item-text">'+esc(ev.text)+'</div>'+(ev.ts?'<div class="sd-item-meta">'+formatTime(ev.ts)+'</div>':'')+'</div></div>'});
+    h+='<div class="sd-item">'+tierBadge(ev.tier)+'<span class="badge '+badge+'">'+label+'</span><div class="sd-item-body"><div class="sd-item-text">'+esc(ev.text)+'</div>'+(ev.ts?'<div class="sd-item-meta">'+formatTime(ev.ts)+'</div>':'')+'</div></div>'});
 
   /* G: Behavioral Patterns */
   h+='<div class="sl">PATTERNS</div>';h+=renderSignals(p,allSessions,relC,cSt);
@@ -1187,6 +1226,69 @@ function renderPD(){
     var st=s.stats||{};
     h+='<div class="card card-interactive" style="display:flex;justify-content:space-between;align-items:center"><div><div style="font:500 var(--fs-sm)/var(--lh-tight) var(--font-sans);color:var(--text-1)">'+formatTime(s.startedAt)+'</div><div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:2px">'+dStr+' \u00b7 '+(st.commitmentsStored||0)+' commits \u00b7 '+(st.decisionsStored||0)+' decisions</div></div><span class="badge '+(isA?"badge-ok":"badge-neutral")+'">'+(isA?"ACTIVE":"DONE")+'</span></div>'});
   if(allSessions.length>5)h+='<div class="pd-link">View all '+allSessions.length+' sessions</div>';
+
+  /* I: MY PATTERNS (self persona only) */
+  if(p.isSelf){
+    h+='<div class="sl">MY PATTERNS</div>';
+    var snaps=p.signalSnapshots||[],sc=allSessions.length;
+
+    /* A: Topics Discussed */
+    if(sc>=2){
+      var topicCounts={};allEntities.forEach(function(e){var k=e.text.toLowerCase();topicCounts[k]=(topicCounts[k]||0)+1});
+      var topTopics=Object.keys(topicCounts).sort(function(a,b){return topicCounts[b]-topicCounts[a]}).slice(0,5);
+      if(topTopics.length){h+='<div class="card"><div style="font:500 var(--fs-sm)/1 var(--font-sans);color:var(--text-1);margin-bottom:var(--s2)">Topics Discussed</div><div style="display:flex;flex-wrap:wrap;gap:var(--s1)">';
+        topTopics.forEach(function(t){h+='<span class="badge badge-info">'+esc(t)+'</span>'});
+        h+='</div><div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">(based on '+sc+' sessions)</div></div>'}
+      else h+='<div class="sig-pending">\u00b7\u00b7 Topics \u2014 no entities tracked yet</div>';
+    }else h+='<div class="sig-pending">\u00b7\u00b7 Topics discussed \u2014 needs 2 sessions</div>';
+
+    /* B: Commitment Follow-Through */
+    var selfCommits=relC;
+    if(selfCommits.length>=3){var sDone=0,sPend=0,sOd=0;
+      selfCommits.forEach(function(c){if(cSt[c.text])sDone++;else{sPend++;if(c.dueDate){var dd=new Date(c.dueDate);if(!isNaN(dd.getTime())&&dd.getTime()<Date.now())sOd++}}});
+      h+='<div class="card"><div style="font:500 var(--fs-sm)/1 var(--font-sans);color:var(--text-1);margin-bottom:var(--s2)">Commitment Follow-Through</div>';
+      h+='<div style="font:400 var(--fs-md)/1 var(--font-mono);color:var(--text-1)">'+sDone+' of '+(sDone+sPend)+' completed ('+Math.round(sDone/(sDone+sPend)*100)+'%)</div>';
+      if(sPend>0)h+='<div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--warn);margin-top:var(--s1)">'+sPend+' pending</div>';
+      if(sOd>0)h+='<div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--danger);margin-top:var(--s1)">'+sOd+' overdue</div>';
+      h+='</div>';
+    }else h+='<div class="sig-pending">\u00b7\u00b7 Commitment follow-through \u2014 needs 3+ commitments</div>';
+
+    /* C: People I Interact With Most */
+    if(sc>=2){
+      var otherPersonas=(S.personas||[]).filter(function(op){return!op.isSelf&&op.sessionIds});
+      var coOccur=[];
+      otherPersonas.forEach(function(op){var shared=0;(op.sessionIds||[]).forEach(function(sid){if(sids.indexOf(sid)!==-1)shared++});if(shared>0)coOccur.push({name:op.name,count:shared})});
+      coOccur.sort(function(a,b){return b.count-a.count});
+      if(coOccur.length>=2){h+='<div class="card"><div style="font:500 var(--fs-sm)/1 var(--font-sans);color:var(--text-1);margin-bottom:var(--s2)">People I Interact With Most</div>';
+        coOccur.slice(0,3).forEach(function(co){h+='<div style="display:flex;justify-content:space-between;padding:var(--s1) 0;font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)"><span>'+esc(co.name)+'</span><span style="font:var(--fs-xs) var(--font-mono);color:var(--text-3)">'+co.count+' session'+(co.count!==1?"s":"")+'</span></div>'});
+        h+='</div>';
+      }else h+='<div class="sig-pending">\u00b7\u00b7 People I interact with \u2014 needs 2+ other personas</div>';
+    }else h+='<div class="sig-pending">\u00b7\u00b7 People I interact with \u2014 needs 2 sessions</div>';
+
+    /* D: Session Activity */
+    if(sc>=1){
+      var totalDur=0,durCount=0;allSessions.forEach(function(s){if(s.startedAt&&s.endedAt){totalDur+=new Date(s.endedAt).getTime()-new Date(s.startedAt).getTime();durCount++}});
+      var avgDur=durCount>0?Math.round(totalDur/durCount/60000):0;
+      h+='<div class="card"><div style="font:500 var(--fs-sm)/1 var(--font-sans);color:var(--text-1);margin-bottom:var(--s2)">Session Activity</div>';
+      h+='<div style="font:400 var(--fs-md)/1 var(--font-mono);color:var(--text-1)">'+sc+' session'+(sc!==1?"s":"")+(avgDur?' \u00b7 Average '+avgDur+'m duration':'')+'</div></div>';
+    }
+
+    /* E: Communication Style Trend */
+    if(snaps.length>=3){
+      var allH=[];snaps.forEach(function(s){if(s.hedgingScores)allH=allH.concat(s.hedgingScores)});
+      var ci={};snaps.forEach(function(s){if(s.intentCounts)Object.keys(s.intentCounts).forEach(function(k){ci[k]=(ci[k]||0)+s.intentCounts[k]})});
+      var ik=Object.keys(ci);
+      if(allH.length>0||ik.length>0){
+        var avgH=allH.length?allH.reduce(function(a,b){return a+b},0)/allH.length:0;
+        var hLvl=allH.length?avgH<3?"below average":avgH<6?"average":"above average":null;
+        var dom="";if(ik.length){var mx=0;ik.forEach(function(k){if(ci[k]>mx){mx=ci[k];dom=k}});var sm={informative:"Informative",persuasive:"Persuasive",speculative:"Speculative",deflective:"Deflective"};dom=sm[dom]||dom}
+        h+='<div class="card"><div style="font:500 var(--fs-sm)/1 var(--font-sans);color:var(--text-1);margin-bottom:var(--s2)">Communication Style Trend</div>';
+        if(hLvl)h+='<div style="font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)">Hedging: '+hLvl+'</div>';
+        if(dom)h+='<div style="font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)">Dominant style: '+esc(dom)+'</div>';
+        h+='<div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">(based on '+snaps.length+' sessions)</div></div>';
+      }else h+='<div class="sig-pending">\u00b7\u00b7 Communication style \u2014 needs hedging or intent data</div>';
+    }else h+='<div class="sig-pending">\u00b7\u00b7 Communication style trend \u2014 needs 3 sessions</div>';
+  }
 
   document.getElementById("pd-body").innerHTML=h;
 
@@ -1287,6 +1389,98 @@ function rCtrl(S){
   sh+='<div class="svc-row"><div class="svc-dot" style="background:'+(llmOk?"var(--ok)":"var(--warn)")+'"></div><div class="svc-name">LLM (Claude)</div><span class="badge '+(llmOk?"badge-ok":"badge-warn")+'">'+(llmOk?"OK":"IDLE")+'</span></div>';
   document.getElementById("svc-list").innerHTML=sh;
 }
+
+/* ═══ DEV TOOLS ═══ */
+var PROXY_BASE="https://vikarux-g2.centralus.cloudapp.azure.com:3001"; // Keep in sync with memoryStore.ts
+var devMode=localStorage.getItem("validateai_dev")==="true"||/[?&]dev=true/.test(location.search);
+var devStatsTimer=null;
+
+function isDevMode(){return devMode}
+function setDevMode(on){devMode=on;localStorage.setItem("validateai_dev",on?"true":"false");
+  document.getElementById("dev-tools").style.display=on?"":"none";
+  if(on){refreshDevStats();startDevStatsTimer()}else{stopDevStatsTimer()}
+  toast(on?"Dev mode enabled":"Dev mode disabled")}
+
+/* 5-tap toggle on DANGER ZONE label */
+var dzTapCount=0,dzTapStart=0;
+document.getElementById("dz-label").addEventListener("click",function(){
+  var now=Date.now();
+  if(now-dzTapStart>3000){dzTapCount=0;dzTapStart=now}
+  dzTapCount++;
+  if(dzTapCount>=5){dzTapCount=0;setDevMode(!devMode)}
+});
+
+/* Show dev tools on load if dev mode active */
+if(devMode){document.getElementById("dev-tools").style.display="";startDevStatsTimer()}
+
+/* Stats refresh */
+function startDevStatsTimer(){stopDevStatsTimer();refreshDevStats();devStatsTimer=setInterval(refreshDevStats,5000)}
+function stopDevStatsTimer(){if(devStatsTimer){clearInterval(devStatsTimer);devStatsTimer=null}}
+
+function refreshDevStats(){
+  fetch(PROXY_BASE+"/api/dev/stats",{headers:{"X-Dev-Mode":"true"}}).then(function(r){return r.json()}).then(function(d){
+    var el=document.getElementById("dev-stats");if(!el)return;
+    el.innerHTML='<div class="dev-stat"><div class="dev-stat-n">'+d.sessions+'</div><div class="dev-stat-l">Sessions</div></div>'+
+      '<div class="dev-stat"><div class="dev-stat-n">'+d.commitments+'</div><div class="dev-stat-l">Commitments</div></div>'+
+      '<div class="dev-stat"><div class="dev-stat-n">'+d.decisions+'</div><div class="dev-stat-l">Decisions</div></div>'+
+      '<div class="dev-stat"><div class="dev-stat-n">'+d.entities+'</div><div class="dev-stat-l">Entities</div></div>'+
+      '<div class="dev-stat"><div class="dev-stat-n">'+d.contradictions+'</div><div class="dev-stat-l">Contradictions</div></div>'+
+      '<div class="dev-stat"><div class="dev-stat-n">'+d.personas+' ('+d.selfPersonas+' self)</div><div class="dev-stat-l">Personas</div></div>'+
+      '<div class="dev-stat"><div class="dev-stat-n">'+(d.dbSizeFormatted||"?")+'</div><div class="dev-stat-l">DB Size</div></div>'+
+      '<div class="dev-stat"><div class="dev-stat-n">'+d.pinnedItems+'</div><div class="dev-stat-l">Pinned</div></div>';
+  }).catch(function(){});
+}
+
+/* Simulate Self Detection */
+document.getElementById("dev-sim-self").addEventListener("click",function(){
+  fire("hey its me clyde, let me know when you are ready");
+  toast("Injected self-detection transcript");
+});
+
+/* Simulate Conversation */
+document.getElementById("dev-sim-conv").addEventListener("click",function(){
+  var S=window.validateAIState;
+  if(!S||!S.activeSessionId){fireSess("START")}
+  setTimeout(function(){fire("Sarah mentioned she would send the contract by Friday. We decided to go with the new vendor.")},100);
+  setTimeout(function(){fire("John confirmed the budget is approved for Q2. Sarah also said the team is concerned about the timeline.")},600);
+  setTimeout(function(){fire("I think we should follow up with Sarah about the contract. The meeting is scheduled for next Tuesday at 2pm.");toast("Injected conversation transcript (3 segments)")},1100);
+});
+
+/* Simulate Contradiction */
+document.getElementById("dev-sim-contra").addEventListener("click",function(){
+  fire("Earlier John said the budget was frozen. Now John is saying the budget is approved and ready.");
+  toast("Injected contradiction transcript");
+});
+
+/* Export Database */
+document.getElementById("dev-export").addEventListener("click",function(){
+  fetch(PROXY_BASE+"/api/dev/export",{headers:{"X-Dev-Mode":"true"}}).then(function(r){return r.json()}).then(function(data){
+    var json=JSON.stringify(data,null,2);
+    var total=0;["sessions","commitments","decisions","entities","contradictions","personas","pinned_items"].forEach(function(k){if(data[k])total+=data[k].length});
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(json).then(function(){toast("Exported "+total+" records to clipboard")}).catch(function(){showExportFallback(json,total)});
+    }else{showExportFallback(json,total)}
+  }).catch(function(err){toast("Export failed: "+err.message)});
+});
+function showExportFallback(json,total){
+  openDetail('<div class="sheet-label">EXPORT ('+total+' records)</div><textarea class="exp-fallback show" style="display:block;min-height:300px" readonly>'+esc(json)+'</textarea><div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">Select all and copy manually</div>');
+}
+
+/* Reset All Data */
+document.getElementById("dev-reset").addEventListener("click",function(){
+  document.getElementById("reset-input").value="";document.getElementById("reset-yes").disabled=true;
+  document.getElementById("reset-modal").classList.add("show");
+});
+document.getElementById("reset-input").addEventListener("input",function(){
+  document.getElementById("reset-yes").disabled=this.value!=="RESET";
+});
+document.getElementById("reset-no").addEventListener("click",function(){document.getElementById("reset-modal").classList.remove("show")});
+document.getElementById("reset-yes").addEventListener("click",function(){
+  fetch(PROXY_BASE+"/api/dev/reset",{method:"DELETE",headers:{"Content-Type":"application/json","X-Dev-Mode":"true"},body:'{"confirm":"RESET"}'}).then(function(r){return r.json()}).then(function(){
+    document.getElementById("reset-modal").classList.remove("show");
+    fire("even forget");toast("All data cleared");refreshDevStats();
+  }).catch(function(err){toast("Reset failed: "+err.message)});
+});
 
 /* ═══ POLL ═══ */
 function countFired(S){var c={};(S.recentOutputs||[]).forEach(function(o){if(o.triggered)c[o.analyzer]=(c[o.analyzer]||0)+1});fired=c}

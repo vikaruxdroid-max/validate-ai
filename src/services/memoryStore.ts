@@ -1,13 +1,15 @@
 import { claudeRequest } from "./claude";
 import { RECALL_SYSTEM } from "../prompts/haiku";
-import type { IMemoryStore, CommitmentEntry, EntityEntry, EntityType, PinnedItem, SessionEntry, Persona, PersonaBrief, PersonaSignalSnapshot } from "../models/types";
+import type { IMemoryStore, CommitmentEntry, DecisionEntry, EntityEntry, EntityType, PinnedItem, SessionEntry, Persona, PersonaBrief, PersonaSignalSnapshot, SourceTier } from "../models/types";
+import { matchesPersona } from "../utils/personaUtils";
+import { CLAUDE_HAIKU } from "../utils/models";
 
 const PROXY_BASE = "https://vikarux-g2.centralus.cloudapp.azure.com:3001";
 
 export class MemoryStore implements IMemoryStore {
   private pinned: PinnedItem[] = [];
   private commitments: CommitmentEntry[] = [];
-  private decisions: { text: string; ts: number; sessionId?: string }[] = [];
+  private decisions: DecisionEntry[] = [];
   private entities: EntityEntry[] = [];
   private sessions: SessionEntry[] = [];
   private personas: Persona[] = [];
@@ -36,7 +38,7 @@ export class MemoryStore implements IMemoryStore {
 
     this.sessions.push(session);
     this.activeSessionId = id;
-    console.log("[MemoryStore] session started:", id, label);
+
     return id;
   }
 
@@ -52,7 +54,6 @@ export class MemoryStore implements IMemoryStore {
       s.stats.entitiesTracked = this.entities.filter((e) => e.sessionId === s.id).length;
       s.stats.factsChecked = factsChecked;
       s.stats.contradictionsDetected = contradictions;
-      console.log("[MemoryStore] session ended:", s.id);
     }
     this.activeSessionId = null;
   }
@@ -75,7 +76,6 @@ export class MemoryStore implements IMemoryStore {
       ts: Date.now(),
       sessionId: sessionId ?? this.activeSessionId ?? undefined,
     });
-    console.log("[MemoryStore] pinned:", item.text);
   }
 
   // ── Recall ────────────────────────────────────────────────────────
@@ -90,8 +90,7 @@ export class MemoryStore implements IMemoryStore {
     const userMsg = `Query: ${query}\n\nStored items:\n${itemList}`;
 
     try {
-      const raw = await claudeRequest("claude-haiku-4-5-20251001", RECALL_SYSTEM, userMsg, undefined, 256);
-      console.log("[MemoryStore] recall raw:", raw);
+      const raw = await claudeRequest(CLAUDE_HAIKU, RECALL_SYSTEM, userMsg, undefined, 256);
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (!jsonMatch) return { found: false };
       const parsed = JSON.parse(jsonMatch[0]);
@@ -134,7 +133,6 @@ export class MemoryStore implements IMemoryStore {
       notes: "",
     };
     this.personas.push(persona);
-    console.log("[MemoryStore] persona created:", persona.name);
     return persona;
   }
 
@@ -152,7 +150,6 @@ export class MemoryStore implements IMemoryStore {
     if (updates.name !== undefined) p.name = updates.name;
     if (updates.aliases !== undefined) p.aliases = updates.aliases;
     if (updates.notes !== undefined) p.notes = updates.notes;
-    console.log("[MemoryStore] persona updated:", p.name);
   }
 
   linkArtifactToPersona(personaId: string, sessionId: string): void {
@@ -162,19 +159,15 @@ export class MemoryStore implements IMemoryStore {
       p.sessionIds.push(sessionId);
     }
     p.lastSeenAt = new Date().toISOString();
-    console.log("[MemoryStore] linked session to persona:", p.name, sessionId);
   }
 
   /** Check a new artifact against all personas and link its session if name matches. */
   checkPersonaLinkForArtifact(text: string, sessionId?: string): void {
     if (!sessionId) return;
-    const lowerText = text.toLowerCase();
     for (const p of this.personas) {
-      const names = [p.name, ...p.aliases].map(n => n.toLowerCase());
-      if (names.some(n => lowerText.includes(n))) {
+      if (matchesPersona(text, p)) {
         if (!p.sessionIds.includes(sessionId)) {
           p.sessionIds.push(sessionId);
-          console.log("[MemoryStore] auto-linked session to persona:", p.name, sessionId);
         }
         p.lastSeenAt = new Date().toISOString();
       }
@@ -185,31 +178,35 @@ export class MemoryStore implements IMemoryStore {
   retroactiveLinkPersona(personaId: string): void {
     const p = this.personas.find(x => x.id === personaId);
     if (!p) return;
-    const names = [p.name, ...p.aliases].map(n => n.toLowerCase());
     const sessionSet = new Set(p.sessionIds);
 
     for (const c of this.commitments) {
-      const text = ((c.text || "") + " " + (c.owner || "")).toLowerCase();
-      if (c.sessionId && names.some(n => text.includes(n))) sessionSet.add(c.sessionId);
+      if (c.sessionId && matchesPersona((c.text || "") + " " + (c.owner || ""), p)) sessionSet.add(c.sessionId);
     }
     for (const d of this.decisions) {
-      if (d.sessionId && names.some(n => d.text.toLowerCase().includes(n))) sessionSet.add(d.sessionId);
+      if (d.sessionId && matchesPersona(d.text, p)) sessionSet.add(d.sessionId);
     }
     for (const e of this.entities) {
-      const text = ((e.text || "") + " " + (e.context || "")).toLowerCase();
-      if (e.sessionId && names.some(n => text.includes(n))) sessionSet.add(e.sessionId);
+      if (e.sessionId && matchesPersona((e.text || "") + " " + (e.context || ""), p)) sessionSet.add(e.sessionId);
     }
     for (const pin of this.pinned) {
-      if (pin.sessionId && names.some(n => pin.text.toLowerCase().includes(n))) sessionSet.add(pin.sessionId);
+      if (pin.sessionId && matchesPersona(pin.text, p)) sessionSet.add(pin.sessionId);
     }
 
     p.sessionIds = Array.from(sessionSet);
-    console.log("[MemoryStore] retroactive link for", p.name, ":", p.sessionIds.length, "sessions");
+  }
+
+  markPersonaAsSelf(id: string): void {
+    for (const p of this.personas) p.isSelf = p.id === id;
+  }
+
+  getSelfPersona(): Persona | undefined {
+    return this.personas.find(p => p.isSelf === true);
   }
 
   setPersonaBrief(personaId: string, brief: PersonaBrief): void {
     const p = this.personas.find((x) => x.id === personaId);
-    if (p) { p.brief = brief; console.log("[MemoryStore] brief cached for:", p.name); }
+    if (p) p.brief = brief;
   }
 
   addPersonaSignalSnapshot(personaId: string, snapshot: PersonaSignalSnapshot): void {
@@ -219,13 +216,11 @@ export class MemoryStore implements IMemoryStore {
     // Avoid duplicate session snapshots
     if (!p.signalSnapshots.some((s) => s.sessionId === snapshot.sessionId)) {
       p.signalSnapshots.push(snapshot);
-      console.log("[MemoryStore] signal snapshot added for:", p.name, snapshot.sessionId);
     }
   }
 
   setCommitmentStatus(commitmentText: string, done: boolean): void {
     this.commitmentStatuses[commitmentText] = done;
-    console.log("[MemoryStore] commitment status:", commitmentText.slice(0, 30), done ? "DONE" : "PENDING");
   }
 
   getCommitmentStatuses(): Record<string, boolean> {
@@ -241,44 +236,76 @@ export class MemoryStore implements IMemoryStore {
     this.personas = [];
     this.commitmentStatuses = {};
     this.activeSessionId = null;
-    console.log("[MemoryStore] session cleared");
   }
 
   // ── Add methods ───────────────────────────────────────────────────
 
   addCommitment(entry: { text: string; owner?: string; dueDate?: string }, sessionId?: string): void {
-    if (this.commitments.some((c) => c.text === entry.text)) return;
     const sid = sessionId ?? this.activeSessionId ?? undefined;
+    // Near-duplicate detection: same owner + similar first 30 chars
+    const prefix = entry.text.slice(0, 30).toLowerCase();
+    const dup = this.commitments.find(c =>
+      c.text.slice(0, 30).toLowerCase() === prefix &&
+      (c.owner || "").toLowerCase() === (entry.owner || "").toLowerCase());
+    if (dup) {
+      dup.confirmationCount = Math.min((dup.confirmationCount ?? 1) + 1, 99);
+      dup.importanceScore = Math.min((dup.importanceScore ?? 5) + 1, 10);
+      return;
+    }
+    // Compute scoring
+    const hasOwner = !!entry.owner;
+    const hasDue = !!entry.dueDate;
+    let score = (hasOwner ? 3 : 0) + (hasDue ? 2 : 0) + 2 + (entry.text.length > 50 ? 1 : 0);
+    score = Math.max(1, Math.min(10, score));
+    const tier: SourceTier = (hasOwner && hasDue) ? "STATED" : hasOwner ? "STATED" : "INFERRED";
     this.commitments.push({
-      text: entry.text,
-      owner: entry.owner,
-      dueDate: entry.dueDate,
-      ts: Date.now(),
-      sessionId: sid,
+      text: entry.text, owner: entry.owner, dueDate: entry.dueDate,
+      ts: Date.now(), sessionId: sid,
+      sourceTier: tier, importanceScore: score, confirmationCount: 1,
     });
-    console.log("[MemoryStore] commitment:", entry.text);
+    // Self-attribution: tag commitment with [SELF] marker if it matches the self persona
+    const selfP = this.getSelfPersona();
+    if (selfP && matchesPersona((entry.text || "") + " " + (entry.owner || ""), selfP)) {
+      const c = this.commitments[this.commitments.length - 1];
+      if (c && !(c.sourceText || "").includes("[SELF]")) {
+        c.sourceText = (c.sourceText || "") + " [SELF]";
+      }
+    }
     this.checkPersonaLinkForArtifact((entry.text || "") + " " + (entry.owner || ""), sid);
   }
 
   addDecision(text: string, sessionId?: string): void {
-    if (this.decisions.some((d) => d.text === text)) return;
     const sid = sessionId ?? this.activeSessionId ?? undefined;
-    this.decisions.push({ text, ts: Date.now(), sessionId: sid });
-    console.log("[MemoryStore] decision:", text);
+    const prefix = text.slice(0, 40).toLowerCase();
+    const dup = this.decisions.find(d => d.text.slice(0, 40).toLowerCase() === prefix);
+    if (dup) {
+      dup.confirmationCount = Math.min((dup.confirmationCount ?? 1) + 1, 99);
+      dup.importanceScore = Math.min((dup.importanceScore ?? 5) + 1, 10);
+      return;
+    }
+    let score = 3 + (text.length > 50 ? 2 : 0);
+    score = Math.max(1, Math.min(10, score));
+    this.decisions.push({ text, ts: Date.now(), sessionId: sid, sourceTier: "INFERRED", importanceScore: score, confirmationCount: 1 });
     this.checkPersonaLinkForArtifact(text, sid);
   }
 
   addEntity(entry: { text: string; type: EntityType; context: string }, sessionId?: string): void {
-    if (this.entities.some((e) => e.text === entry.text)) return;
     const sid = sessionId ?? this.activeSessionId ?? undefined;
+    const dup = this.entities.find(e => e.text === entry.text && e.type === entry.type);
+    if (dup) {
+      dup.confirmationCount = Math.min((dup.confirmationCount ?? 1) + 1, 99);
+      dup.importanceScore = Math.min((dup.importanceScore ?? 3) + 1, 10);
+      return;
+    }
+    const typeScores: Record<string, number> = { PERSON: 4, ORGANIZATION: 3, DATE: 2, NUMBER: 2, PLACE: 1 };
+    let score = (typeScores[entry.type] ?? 1) + ((entry.context || "").length > 20 ? 2 : 0);
+    score = Math.max(1, Math.min(10, score));
+    const tier: SourceTier = entry.type === "PERSON" && (entry.context || "").length > 0 ? "STATED" : "INFERRED";
     this.entities.push({
-      text: entry.text,
-      type: entry.type,
-      context: entry.context,
-      ts: Date.now(),
-      sessionId: sid,
+      text: entry.text, type: entry.type, context: entry.context,
+      ts: Date.now(), sessionId: sid,
+      sourceTier: tier, importanceScore: score, confirmationCount: 1,
     });
-    console.log("[MemoryStore] entity:", entry.type, entry.text);
     this.checkPersonaLinkForArtifact((entry.text || "") + " " + (entry.context || ""), sid);
   }
 
@@ -313,8 +340,6 @@ export class MemoryStore implements IMemoryStore {
       this.personas = data.personas ?? [];
       this.commitmentStatuses = data.commitmentStatuses ?? {};
       this.activeSessionId = data.activeSessionId ?? null;
-      console.log("[MemoryStore] loaded — sessions:", this.sessions.length,
-        "commitments:", this.commitments.length);
     } catch (err) {
       console.warn("[MemoryStore] loadJSON failed:", err);
     }
@@ -328,7 +353,6 @@ export class MemoryStore implements IMemoryStore {
         body: this.toJSON(),
       });
       if (!res.ok) console.warn("[MemoryStore] save failed:", res.status);
-      else console.log("[MemoryStore] saved to proxy");
     } catch (err) {
       console.warn("[MemoryStore] save error:", err);
     }
@@ -349,7 +373,6 @@ export class MemoryStore implements IMemoryStore {
   async deleteFile(): Promise<void> {
     try {
       await fetch(`${PROXY_BASE}/memory`, { method: "DELETE" });
-      console.log("[MemoryStore] file deleted on proxy");
     } catch (err) {
       console.warn("[MemoryStore] delete error:", err);
     }

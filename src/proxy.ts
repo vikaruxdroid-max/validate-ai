@@ -1,20 +1,31 @@
 import "dotenv/config";
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
+import { readFileSync, statSync } from "fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "https";
 import { WebSocketServer, WebSocket } from "ws";
+import { initDatabase, importJSON, exportJSON, clearAll } from "./services/database";
 
 const DG_KEY = process.env.VITE_DEEPGRAM_API_KEY;
 const PORT = 3001;
 const CERT_DIR = "/etc/letsencrypt/live/vikarux-g2.centralus.cloudapp.azure.com";
 const MEMORY_PATH = process.env.MEMORY_PATH ?? "/home/vikarux/validate-ai/session-memory.json";
+const DB_PATH = process.env.DB_PATH ?? "/home/vikarux/validate-ai/validateai.db";
 
 if (!DG_KEY) {
   console.error("[proxy] VITE_DEEPGRAM_API_KEY not set in .env");
   process.exit(1);
 }
 
-console.log("[proxy] key length:", DG_KEY.length, "first 8:", DG_KEY.slice(0, 8));
-console.log("[proxy] memory path:", MEMORY_PATH);
+console.log("[proxy] Deepgram API key configured, length:", DG_KEY.length);
+console.log("[proxy] DB path:", DB_PATH, "JSON path:", MEMORY_PATH);
+
+// Initialize SQLite database (runs migration from JSON if needed)
+const db = initDatabase(DB_PATH, MEMORY_PATH);
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function errBody(error: string, code: string): string {
+  return JSON.stringify({ error, code, timestamp: new Date().toISOString() });
+}
 
 // ── HTTPS server with request handler for persistence ───────────────
 
@@ -22,7 +33,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   // CORS headers for browser access
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Dev-Mode");
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -31,18 +42,23 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   }
 
   if (req.url === "/memory/save" && req.method === "POST") {
+    if (!req.headers["content-type"]?.includes("application/json")) {
+      res.writeHead(415, { "Content-Type": "application/json" });
+      res.end(errBody("Content-Type must be application/json", "INVALID_CONTENT_TYPE"));
+      return;
+    }
     let body = "";
     req.on("data", (chunk: Buffer) => (body += chunk.toString()));
     req.on("end", () => {
       try {
-        writeFileSync(MEMORY_PATH, body, "utf-8");
-        console.log("[proxy] memory saved:", body.length, "bytes");
+        const data = JSON.parse(body);
+        importJSON(db, data);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end('{"ok":true}');
       } catch (err: any) {
         console.error("[proxy] memory save error:", err.message);
-        res.writeHead(500);
-        res.end('{"error":"save failed"}');
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(errBody(err.message, "SAVE_FAILED"));
       }
     });
     return;
@@ -50,40 +66,111 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
 
   if (req.url === "/memory/load" && req.method === "GET") {
     try {
-      if (existsSync(MEMORY_PATH)) {
-        const data = readFileSync(MEMORY_PATH, "utf-8");
-        console.log("[proxy] memory loaded:", data.length, "bytes");
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(data);
-      } else {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end("{}");
-      }
+      const json = exportJSON(db);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(json);
     } catch (err: any) {
       console.error("[proxy] memory load error:", err.message);
       res.writeHead(500);
-      res.end('{"error":"load failed"}');
+      res.end(errBody(err.message, "LOAD_FAILED"));
     }
     return;
   }
 
   if (req.url === "/memory" && req.method === "DELETE") {
     try {
-      if (existsSync(MEMORY_PATH)) {
-        unlinkSync(MEMORY_PATH);
-        console.log("[proxy] memory file deleted");
-      }
+      clearAll(db);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end('{"ok":true}');
     } catch (err: any) {
       console.error("[proxy] memory delete error:", err.message);
       res.writeHead(500);
-      res.end('{"error":"delete failed"}');
+      res.end(errBody(err.message, "DELETE_FAILED"));
     }
     return;
   }
 
-  // Not a memory endpoint — ignore (WebSocket upgrade handled separately)
+  // ── Dev endpoints (guarded) ──────────────────────────────────────
+  if (req.url?.startsWith("/api/dev/")) {
+    // Note: X-Dev-Mode header can be set by any client.
+    // The localhost check is the real security boundary.
+    // The header is a convenience for LAN development only.
+    const isLocal = req.socket.remoteAddress === "127.0.0.1" || req.socket.remoteAddress === "::1" || req.socket.remoteAddress === "::ffff:127.0.0.1";
+    const hasHeader = req.headers["x-dev-mode"] === "true";
+    if (!isLocal && !hasHeader) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(errBody("Dev endpoint unavailable", "FORBIDDEN"));
+      return;
+    }
+
+    if (req.url === "/api/dev/stats" && req.method === "GET") {
+      try {
+        const counts = {
+          sessions: (db.prepare("SELECT COUNT(*) as n FROM sessions").get() as any).n,
+          commitments: (db.prepare("SELECT COUNT(*) as n FROM commitments").get() as any).n,
+          decisions: (db.prepare("SELECT COUNT(*) as n FROM decisions").get() as any).n,
+          entities: (db.prepare("SELECT COUNT(*) as n FROM entities").get() as any).n,
+          contradictions: (db.prepare("SELECT COUNT(*) as n FROM contradictions").get() as any).n,
+          personas: (db.prepare("SELECT COUNT(*) as n FROM personas").get() as any).n,
+          selfPersonas: (db.prepare("SELECT COUNT(*) as n FROM personas WHERE is_self=1").get() as any).n,
+          pinnedItems: (db.prepare("SELECT COUNT(*) as n FROM pinned_items").get() as any).n,
+        };
+        let dbSizeBytes = 0;
+        try { dbSizeBytes = statSync(DB_PATH).size; } catch { /* file may not exist yet */ }
+        const dbSizeFormatted = dbSizeBytes > 1048576 ? (dbSizeBytes / 1048576).toFixed(1) + " MB" : (dbSizeBytes / 1024).toFixed(1) + " KB";
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ...counts, dbSizeBytes, dbSizeFormatted }));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (req.url === "/api/dev/export" && req.method === "GET") {
+      try {
+        const result: any = { exported_at: new Date().toISOString() };
+        // Each table queried individually — no string interpolation in SQL
+        result.sessions = db.prepare("SELECT * FROM sessions").all();
+        result.commitments = db.prepare("SELECT * FROM commitments").all();
+        result.decisions = db.prepare("SELECT * FROM decisions").all();
+        result.entities = db.prepare("SELECT * FROM entities").all();
+        result.contradictions = db.prepare("SELECT * FROM contradictions").all();
+        result.personas = db.prepare("SELECT * FROM personas").all();
+        result.pinned_items = db.prepare("SELECT * FROM pinned_items").all();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result, null, 2));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+      return;
+    }
+
+    if (req.url === "/api/dev/reset" && req.method === "DELETE") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => (body += chunk.toString()));
+      req.on("end", () => {
+        try {
+          const parsed = JSON.parse(body || "{}");
+          if (parsed.confirm !== "RESET") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(errBody("confirm field must be exactly RESET", "INVALID_CONFIRM"));
+            return;
+          }
+          clearAll(db);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ cleared: true, timestamp: new Date().toISOString() }));
+        } catch (err: any) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+  }
+
+  // Not a known endpoint — ignore (WebSocket upgrade handled separately)
   res.writeHead(404);
   res.end();
 }
@@ -105,7 +192,6 @@ httpsServer.listen(PORT, "0.0.0.0", () => {
 // ── Deepgram WebSocket relay ────────────────────────────────────────
 
 wss.on("connection", (browser) => {
-  console.log("[proxy] browser connected, opening Deepgram upstream");
 
   const dgUrl =
     "wss://api.deepgram.com/v1/listen" +
@@ -114,47 +200,30 @@ wss.on("connection", (browser) => {
 
   const headers = { Authorization: `Token ${DG_KEY}` };
 
-  console.log("[proxy] URL:", dgUrl);
-  console.log("[proxy] headers:", JSON.stringify(headers));
+  console.log("[proxy] Deepgram URL:", dgUrl);
+  console.log("[proxy] Deepgram auth header set");
 
   const dg = new WebSocket(dgUrl, { headers });
 
   dg.binaryType = "arraybuffer";
 
-  dg.on("open", () => console.log("[proxy] Deepgram OPEN"));
 
   // Deepgram → browser
-  let dgMsgCount = 0;
   dg.on("message", (data, isBinary) => {
-    dgMsgCount++;
-    if (dgMsgCount <= 10) {
-      const str = Buffer.isBuffer(data) ? data.toString() : String(data);
-      console.log(`[proxy] DG→browser #${dgMsgCount} isBinary:${isBinary} len:${str.length} preview:${str.slice(0, 200)}`);
-    }
     if (browser.readyState === WebSocket.OPEN) {
       browser.send(data, { binary: isBinary });
     }
   });
 
   // Browser PCM → Deepgram
-  let browserMsgCount = 0;
   browser.on("message", (data, isBinary) => {
-    browserMsgCount++;
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
-    if (browserMsgCount <= 5) {
-      const nonZero = buf.some((b) => b !== 0);
-      console.log(`[proxy] browser→DG #${browserMsgCount} isBinary:${isBinary} len:${buf.length} nonZero:${nonZero} first8:[${Array.from(buf.slice(0, 8))}]`);
-    }
-    if (browserMsgCount === 100) {
-      console.log("[proxy] 100 audio chunks forwarded, suppressing further logs");
-    }
     if (dg.readyState === WebSocket.OPEN) {
       dg.send(buf);
     }
   });
 
   dg.on("close", (code, reason) => {
-    console.log("[proxy] Deepgram CLOSE — code:", code, "reason:", reason.toString());
     if (browser.readyState === WebSocket.OPEN) browser.close();
   });
 
@@ -171,7 +240,6 @@ wss.on("connection", (browser) => {
   });
 
   browser.on("close", () => {
-    console.log("[proxy] browser disconnected");
     if (dg.readyState === WebSocket.OPEN) dg.close();
   });
 

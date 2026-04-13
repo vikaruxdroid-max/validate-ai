@@ -14,8 +14,18 @@ import { SESSION_SUMMARY_SYSTEM, ENTITY_EXTRACTION_SYSTEM } from "../prompts/hai
 import { Scheduler } from "./scheduler";
 import { Prioritizer } from "./prioritizer";
 import { CooldownEngine } from "./cooldown";
+import { CLAUDE_SONNET, CLAUDE_HAIKU } from "../utils/models";
+import { matchesPersona } from "../utils/personaUtils";
 
 const BUFFER_SECONDS = 90;
+const HUD_DEFAULT_TTL = 5000;
+const HUD_SELF_ACTIVATE_TTL = 3000;
+const SELF_DETECTION_WINDOW_MS = 60_000;
+const MAX_RECENT_OUTPUTS = 20;
+const ENTITY_EXTRACT_MIN_CHARS = 30;
+const ENTITY_EXTRACT_INTERVAL_MS = 10_000;
+const PASSIVE_CYCLE_INTERVAL_MS = 2000;
+const AUTO_SAVE_INTERVAL_MS = 60_000;
 
 // ── Trigger phrase tables ───────────────────────────────────────────
 
@@ -123,6 +133,10 @@ export class Orchestrator {
   private personMentionCounts = new Map<string, number>();
   private proposedPersonaNames = new Set<string>();
   private pendingPersonaDetection: { name: string; sessionId: string; mentionCount: number } | null = null;
+  private selfPersonaId: string | null = null;
+  private selfPersonaName: string | null = null;
+  private selfActivatedThisSession = false;
+  private selfDetectionWindowStart = Date.now();
   private factValidation: FactValidationAnalyzer;
   private recallAnalyzer: RecallAnalyzer;
 
@@ -147,9 +161,9 @@ export class Orchestrator {
   /** Start polling loops and auto-save. Returns loaded memory item count. */
   async start(): Promise<number> {
     await this.memoryStore.load();
-    this.passiveTimer = setInterval(() => this.runPassiveCycle(), 2000);
-    this.entityExtractTimer = setInterval(() => this.runEntityExtraction(), 10_000);
-    this.memoryStore.startAutoSave(60_000);
+    this.passiveTimer = setInterval(() => this.runPassiveCycle(), PASSIVE_CYCLE_INTERVAL_MS);
+    this.entityExtractTimer = setInterval(() => this.runEntityExtraction(), ENTITY_EXTRACT_INTERVAL_MS);
+    this.memoryStore.startAutoSave(AUTO_SAVE_INTERVAL_MS);
     const session = this.memoryStore.getSession();
     return session.pinned.length + session.commitments.length +
       session.decisions.length + session.entities.length;
@@ -190,7 +204,6 @@ export class Orchestrator {
       wordCount: meta?.wordCount,
       durationMs: meta?.durationMs,
     });
-    console.log("[STT]", text);
 
     // Prune segments older than buffer window
     const cutoff = now - BUFFER_SECONDS * 1000;
@@ -198,11 +211,13 @@ export class Orchestrator {
       this.transcript.shift();
     }
 
+    // ── Self-persona detection (first 60s of session only) ────────
+    this.checkSelfDetection(text);
+
     // ── Active analyzer triggers ────────────────────────────────────
     if (!this.cooldown.isInCooldown(this.factValidation.name)) {
       const factTrigger = this.factValidation.checkTrigger(text);
       if (factTrigger) {
-        console.log("[Orchestrator] trigger matched:", factTrigger, "in:", text);
         await this.runActiveAnalyzer(this.factValidation);
         return;
       }
@@ -211,7 +226,6 @@ export class Orchestrator {
     if (!this.cooldown.isInCooldown(this.recallAnalyzer.name)) {
       const recallTrigger = this.recallAnalyzer.checkTrigger(text);
       if (recallTrigger) {
-        console.log("[Orchestrator] recall trigger:", recallTrigger);
         await this.runActiveAnalyzer(this.recallAnalyzer);
         return;
       }
@@ -219,49 +233,41 @@ export class Orchestrator {
 
     // ── Direct triggers (no analyzer, handled inline) ───────────────
     if (detectTriggerFrom(text, EXPLAIN_WHY_TRIGGERS)) {
-      console.log("[Orchestrator] explain-why trigger");
       await this.handleExplainWhy();
       return;
     }
 
     if (detectTriggerFrom(text, COMMITMENTS_LIST_TRIGGERS)) {
-      console.log("[Orchestrator] commitments-list trigger");
       this.showCommitmentsList();
       return;
     }
 
     if (detectTriggerFrom(text, DECISIONS_LIST_TRIGGERS)) {
-      console.log("[Orchestrator] decisions-list trigger");
       this.showDecisionsList();
       return;
     }
 
     if (detectTriggerFrom(text, SUMMARY_TRIGGERS)) {
-      console.log("[Orchestrator] session-summary trigger");
       await this.handleSessionSummary();
       return;
     }
 
     if (detectTriggerFrom(text, STATS_TRIGGERS)) {
-      console.log("[Orchestrator] session-stats trigger");
       this.handleSessionStats();
       return;
     }
 
     if (detectTriggerFrom(text, FORGET_TRIGGERS)) {
-      console.log("[Orchestrator] forget trigger");
       await this.handleForget();
       return;
     }
 
     if (detectTriggerFrom(text, STATUS_TRIGGERS)) {
-      console.log("[Orchestrator] status trigger");
       this.handleStatus();
       return;
     }
 
     if (detectTriggerFrom(text, HELP_TRIGGERS)) {
-      console.log("[Orchestrator] help trigger");
       this.handleHelp();
       return;
     }
@@ -284,10 +290,10 @@ export class Orchestrator {
         mode: "CARD",
         title: "COMMITMENTS",
         line1: "NO COMMITMENTS YET",
-        ttlMs: 5000,
+        ttlMs: HUD_DEFAULT_TTL,
         sourceAnalyzer: "system",
       });
-      setTimeout(() => this.emitListening(), 5000);
+      this.scheduleHeartbeatRestore();
       return;
     }
 
@@ -303,7 +309,7 @@ export class Orchestrator {
       title: `${items.length} COMMITMENTS`,
       line1: "",
       listItems: items,
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
   }
@@ -316,10 +322,10 @@ export class Orchestrator {
         mode: "CARD",
         title: "DECISIONS",
         line1: "NO DECISIONS YET",
-        ttlMs: 5000,
+        ttlMs: HUD_DEFAULT_TTL,
         sourceAnalyzer: "system",
       });
-      setTimeout(() => this.emitListening(), 5000);
+      this.scheduleHeartbeatRestore();
       return;
     }
 
@@ -330,7 +336,7 @@ export class Orchestrator {
       title: `${items.length} DECISIONS`,
       line1: "",
       listItems: items,
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
   }
@@ -346,10 +352,10 @@ export class Orchestrator {
         mode: "CARD",
         title: "WHY",
         line1: "NO RECENT CHECK",
-        ttlMs: 5000,
+        ttlMs: HUD_DEFAULT_TTL,
         sourceAnalyzer: "system",
       });
-      setTimeout(() => this.emitListening(), 5000);
+      this.scheduleHeartbeatRestore();
       return;
     }
 
@@ -357,7 +363,7 @@ export class Orchestrator {
       mode: "CARD",
       title: "CHECKING",
       line1: "C...",
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
 
@@ -372,33 +378,32 @@ export class Orchestrator {
         `Summary: ${summary}`;
 
       const explanation = await claudeRequest(
-        "claude-sonnet-4-20250514",
+        CLAUDE_SONNET,
         EXPLAIN_WHY_SYSTEM,
         userMsg,
         undefined,
         256,
       );
 
-      console.log("[ExplainWhy] response:", explanation);
 
       this.onHud({
         mode: "CARD",
         title: "WHY",
         line1: explanation.trim().slice(0, 200),
-        ttlMs: 5000,
+        ttlMs: HUD_DEFAULT_TTL,
         sourceAnalyzer: "system",
       });
-      setTimeout(() => this.emitListening(), 5000);
+      this.scheduleHeartbeatRestore();
     } catch (err: any) {
       console.error("[ExplainWhy] error:", err);
       this.onHud({
         mode: "ALERT",
         title: "ERROR",
         line1: err?.message ?? "Explain failed",
-        ttlMs: 5000,
+        ttlMs: HUD_DEFAULT_TTL,
         sourceAnalyzer: "system",
       });
-      setTimeout(() => this.emitListening(), 5000);
+      this.scheduleHeartbeatRestore();
     }
   }
 
@@ -414,7 +419,7 @@ export class Orchestrator {
       mode: "CARD",
       title: "SESSION",
       line1: statsLine,
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
 
@@ -428,23 +433,22 @@ export class Orchestrator {
           `Contradictions: ${this.contradictionsCount}`;
 
         const summary = await claudeRequest(
-          "claude-haiku-4-5-20251001",
+          CLAUDE_HAIKU,
           SESSION_SUMMARY_SYSTEM,
           fullStats,
           undefined,
           96,
         );
 
-        console.log("[SessionSummary] response:", summary);
 
         this.onHud({
           mode: "CARD",
           title: "SUMMARY",
           line1: summary.trim().slice(0, 160),
-          ttlMs: 5000,
+          ttlMs: HUD_DEFAULT_TTL,
           sourceAnalyzer: "system",
         });
-        setTimeout(() => this.emitListening(), 5000);
+        this.scheduleHeartbeatRestore();
       } catch (err) {
         console.warn("[SessionSummary] Haiku error:", err);
         this.emitListening();
@@ -463,10 +467,10 @@ export class Orchestrator {
       title: "STATS",
       line1: l1,
       line2: l2,
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
-    setTimeout(() => this.emitListening(), 5000);
+    this.scheduleHeartbeatRestore();
   }
 
   private async handleForget(): Promise<void> {
@@ -478,16 +482,15 @@ export class Orchestrator {
       mode: "PASSIVE",
       title: "MEMORY CLEARED",
       line1: "MEMORY CLEARED",
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
-    setTimeout(() => this.emitListening(), 5000);
+    this.scheduleHeartbeatRestore();
   }
 
   private handleToggle(analyzerKey: string): void {
     const analyzerName = TOGGLE_ANALYZERS[analyzerKey];
     if (!analyzerName) {
-      console.log("[Orchestrator] unknown toggle target:", analyzerKey);
       return;
     }
 
@@ -499,16 +502,15 @@ export class Orchestrator {
     }
 
     const state = wasDisabled ? "ON" : "OFF";
-    console.log("[Orchestrator] toggle:", analyzerName, state);
 
     this.onHud({
       mode: "PASSIVE",
       title: `${analyzerKey.toUpperCase()}: ${state}`,
       line1: `${analyzerKey.toUpperCase()}: ${state}`,
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
-    setTimeout(() => this.emitListening(), 5000);
+    this.scheduleHeartbeatRestore();
   }
 
   private handleStatus(): void {
@@ -524,7 +526,7 @@ export class Orchestrator {
       title: "ANALYZER STATUS",
       line1: "",
       listItems: items.slice(0, 20),
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
   }
@@ -535,14 +537,14 @@ export class Orchestrator {
       title: "COMMANDS",
       line1: "",
       listItems: HELP_ITEMS,
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: "system",
     });
   }
 
   private async runEntityExtraction(): Promise<void> {
     const rollingText = this.transcript.map((s) => s.text).join(" ");
-    if (rollingText.length - this.lastEntityExtractLength < 30) return;
+    if (rollingText.length - this.lastEntityExtractLength < ENTITY_EXTRACT_MIN_CHARS) return;
 
     const now = Date.now();
     const cutoff = now - 30_000;
@@ -557,7 +559,7 @@ export class Orchestrator {
 
     try {
       const raw = await claudeRequest(
-        "claude-haiku-4-5-20251001",
+        CLAUDE_HAIKU,
         ENTITY_EXTRACTION_SYSTEM,
         recent,
         undefined,
@@ -568,7 +570,7 @@ export class Orchestrator {
       if (!match) return;
 
       const parsed = JSON.parse(match[0]);
-      const entities: any[] = parsed.entities ?? [];
+      const entities: Array<{ text: string; type: string; context?: string }> = parsed.entities ?? [];
 
       for (const e of entities) {
         if (e.text && e.type) {
@@ -580,10 +582,6 @@ export class Orchestrator {
         }
       }
 
-      if (entities.length > 0) {
-        console.log("[EntityExtractor] extracted:", entities.length, "entities");
-      }
-
       // Persona detection: track PERSON mentions and auto-link
       const currentSessionId = this.memoryStore.getCurrentSessionId();
       for (const e of entities) {
@@ -593,10 +591,7 @@ export class Orchestrator {
           this.personMentionCounts.set(name, count);
 
           const existingPersonas = this.memoryStore.getPersonas();
-          const matchedPersona = existingPersonas.find(p =>
-            p.name.toLowerCase() === name.toLowerCase() ||
-            p.aliases.some(a => a.toLowerCase() === name.toLowerCase()),
-          );
+          const matchedPersona = existingPersonas.find(p => matchesPersona(name, p));
 
           if (matchedPersona && currentSessionId) {
             this.memoryStore.linkArtifactToPersona(matchedPersona.id, currentSessionId);
@@ -610,7 +605,6 @@ export class Orchestrator {
               sessionId: currentSessionId || this.sessionId,
               mentionCount: count,
             };
-            console.log("[Orchestrator] persona detection:", name, "mentions:", count);
           }
         }
       }
@@ -640,7 +634,7 @@ export class Orchestrator {
       mode: "CARD",
       title: "CHECKING",
       line1: "C...",
-      ttlMs: 5000,
+      ttlMs: HUD_DEFAULT_TTL,
       sourceAnalyzer: analyzer.name,
     });
 
@@ -654,10 +648,10 @@ export class Orchestrator {
         mode: "ALERT",
         title: "ERROR",
         line1: err?.message ?? "Analysis failed",
-        ttlMs: 5000,
+        ttlMs: HUD_DEFAULT_TTL,
         sourceAnalyzer: analyzer.name,
       });
-      setTimeout(() => this.emitListening(), 5000);
+      this.scheduleHeartbeatRestore();
     }
   }
 
@@ -687,7 +681,7 @@ export class Orchestrator {
 
   private handleResult(result: AnalyzerResult): void {
     this.recentOutputs.push(result);
-    if (this.recentOutputs.length > 20) this.recentOutputs.shift();
+    if (this.recentOutputs.length > MAX_RECENT_OUTPUTS) this.recentOutputs.shift();
 
     // Track stats for session summary
     if (result.analyzer === "factValidation" && result.triggered) {
@@ -699,15 +693,7 @@ export class Orchestrator {
 
     if (!result.triggered) return;
 
-    if (!this.prioritizer.shouldDisplay(result)) {
-      console.log(
-        "[Orchestrator] suppressed:",
-        result.analyzer,
-        "priority:",
-        result.priority,
-      );
-      return;
-    }
+    if (!this.prioritizer.shouldDisplay(result)) return;
 
     const payload = this.toHudPayload(result);
     this.onHud(payload);
@@ -743,6 +729,10 @@ export class Orchestrator {
       ttlMs: result.expiresInMs ?? 5000,
       sourceAnalyzer: result.analyzer,
     };
+  }
+
+  private scheduleHeartbeatRestore(delayMs = HUD_DEFAULT_TTL): void {
+    setTimeout(() => this.emitListening(), delayMs);
   }
 
   private emitListening(): void {
@@ -783,5 +773,112 @@ export class Orchestrator {
 
   clearPendingPersonaDetection(): void {
     this.pendingPersonaDetection = null;
+  }
+
+  // ── Self persona ──────────────────────────────────────────────────
+
+  getSelfPersonaId(): string | null {
+    return this.selfPersonaId;
+  }
+
+  getSelfPersonaName(): string | null {
+    return this.selfPersonaName;
+  }
+
+  /** Called by main.ts on session START to open a new 60s detection window. */
+  resetSelfDetection(): void {
+    this.selfDetectionWindowStart = Date.now();
+    this.selfActivatedThisSession = false;
+  }
+
+  /** Called by main.ts on session END. */
+  clearSelfPersona(): void {
+    this.selfPersonaId = null;
+    this.selfPersonaName = null;
+    this.selfActivatedThisSession = false;
+  }
+
+  private checkSelfDetection(text: string): void {
+    if (this.selfActivatedThisSession) return;
+    if (Date.now() - this.selfDetectionWindowStart > SELF_DETECTION_WINDOW_MS) return;
+
+    // Normalize: lowercase, replace curly apostrophes with straight, collapse whitespace, strip trailing punctuation
+    const norm = text.toLowerCase()
+      .replace(/[\u2018\u2019\u0060\u00b4\u2032\u2035]/g, "'")
+      .replace(/[^a-z' ]/g, "")
+      .replace(/ +/g, " ")
+      .trim();
+
+    // Strip apostrophes for pattern matching (handles "it's", "its", "it\u2019s" identically)
+    const stripped = norm.replace(/'/g, "");
+
+    const patterns: RegExp[] = [
+      /^hey its me (.+)$/,
+      /^its me (.+)$/,
+      /^this is (.+)$/,
+      /^its (.+) here$/,
+      /^hi its (.+)$/,
+      /^hey this is (.+)$/,
+    ];
+
+    let extracted: string | null = null;
+    for (const pat of patterns) {
+      const m = stripped.match(pat);
+      if (m?.[1]) { extracted = m[1].trim(); break; }
+    }
+    if (!extracted) return;
+
+    // Validate: must be 2+ chars, must be alphabetic (no pure numbers)
+    extracted = extracted.replace(/[^a-z ]/g, "").trim();
+    if (extracted.length < 2 || !/[a-z]/.test(extracted)) {
+      console.warn("[SelfDetect] name validation failed for:", JSON.stringify(extracted));
+      return;
+    }
+
+    // Title case
+    const name = extracted.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    this.activateSelfMode(name);
+  }
+
+  private activateSelfMode(name: string): void {
+    this.selfActivatedThisSession = true;
+
+    // Match existing personas by name or alias — check for ambiguity
+    const personas = this.memoryStore.getPersonas();
+    const nameL = name.toLowerCase();
+    const matches = personas.filter(p =>
+      p.name.toLowerCase() === nameL ||
+      (p.aliases || []).some(a => a.toLowerCase() === nameL),
+    );
+
+    if (matches.length > 1) {
+      console.warn("[SelfDetect] ambiguous match for", name, "— matched", matches.length, "personas, skipping");
+      this.selfActivatedThisSession = false; // allow retry with different phrase
+      return;
+    }
+
+    if (matches.length === 1) {
+      this.memoryStore.markPersonaAsSelf(matches[0].id);
+      this.selfPersonaId = matches[0].id;
+      this.selfPersonaName = matches[0].name;
+    } else {
+      const sid = this.memoryStore.getCurrentSessionId() ?? undefined;
+      const persona = this.memoryStore.createPersona(name, sid);
+      this.memoryStore.markPersonaAsSelf(persona.id);
+      this.selfPersonaId = persona.id;
+      this.selfPersonaName = name;
+    }
+
+    // HUD: show name for 3 seconds
+    this.onHud({
+      mode: "CARD",
+      title: name.toUpperCase(),
+      line1: name.toUpperCase(),
+      ttlMs: HUD_SELF_ACTIVATE_TTL,
+      sourceAnalyzer: "system",
+    });
+    this.scheduleHeartbeatRestore(HUD_SELF_ACTIVATE_TTL);
+
+    console.log("Self persona activated:", name, "(id:", this.selfPersonaId, ")");
   }
 }
