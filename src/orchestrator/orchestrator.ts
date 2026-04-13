@@ -120,6 +120,9 @@ export class Orchestrator {
   private passiveTimer: ReturnType<typeof setInterval> | null = null;
   private entityExtractTimer: ReturnType<typeof setInterval> | null = null;
   private lastEntityExtractLength = 0;
+  private personMentionCounts = new Map<string, number>();
+  private proposedPersonaNames = new Set<string>();
+  private pendingPersonaDetection: { name: string; sessionId: string; mentionCount: number } | null = null;
   private factValidation: FactValidationAnalyzer;
   private recallAnalyzer: RecallAnalyzer;
 
@@ -580,6 +583,37 @@ export class Orchestrator {
       if (entities.length > 0) {
         console.log("[EntityExtractor] extracted:", entities.length, "entities");
       }
+
+      // Persona detection: track PERSON mentions and auto-link
+      const currentSessionId = this.memoryStore.getCurrentSessionId();
+      for (const e of entities) {
+        if (e.type === "PERSON" && e.text) {
+          const name = e.text;
+          const count = (this.personMentionCounts.get(name) || 0) + 1;
+          this.personMentionCounts.set(name, count);
+
+          const existingPersonas = this.memoryStore.getPersonas();
+          const matchedPersona = existingPersonas.find(p =>
+            p.name.toLowerCase() === name.toLowerCase() ||
+            p.aliases.some(a => a.toLowerCase() === name.toLowerCase()),
+          );
+
+          if (matchedPersona && currentSessionId) {
+            this.memoryStore.linkArtifactToPersona(matchedPersona.id, currentSessionId);
+          }
+
+          if (count >= 2 && !this.pendingPersonaDetection && !matchedPersona
+              && !this.proposedPersonaNames.has(name.toLowerCase())) {
+            this.proposedPersonaNames.add(name.toLowerCase());
+            this.pendingPersonaDetection = {
+              name,
+              sessionId: currentSessionId || this.sessionId,
+              mentionCount: count,
+            };
+            console.log("[Orchestrator] persona detection:", name, "mentions:", count);
+          }
+        }
+      }
     } catch (err) {
       console.warn("[EntityExtractor] error:", err);
     }
@@ -741,5 +775,13 @@ export class Orchestrator {
 
   getMemoryStore() {
     return this.memoryStore;
+  }
+
+  getPendingPersonaDetection() {
+    return this.pendingPersonaDetection;
+  }
+
+  clearPendingPersonaDetection(): void {
+    this.pendingPersonaDetection = null;
   }
 }

@@ -359,6 +359,8 @@ async function main(): Promise<void> {
       },
       activeAnalyzers: orchestrator.getDisabledAnalyzers(),
       analyzerBadge: orchestrator.getAnalyzerBadge(),
+      personas: store.getPersonas(),
+      pendingPersonaDetection: orchestrator.getPendingPersonaDetection(),
     };
   }
   updatePhoneState();
@@ -400,6 +402,22 @@ async function main(): Promise<void> {
       store.endSession(stats.factsChecked, stats.contradictions);
       store.save();
       console.log("[PhoneUI] session ended and saved");
+    }
+    updatePhoneState();
+  }) as EventListener);
+
+  // Listen for persona events from phone UI
+  window.addEventListener("validateai-persona", ((e: CustomEvent) => {
+    const { action, name, sessionId } = e.detail || {};
+    const store = orchestrator.getMemoryStore();
+    if (action === "CREATE") {
+      const persona = store.createPersona(name, sessionId);
+      if (sessionId) store.linkArtifactToPersona(persona.id, sessionId);
+      orchestrator.clearPendingPersonaDetection();
+      console.log("[PhoneUI] persona created:", name);
+    } else if (action === "SKIP") {
+      orchestrator.clearPendingPersonaDetection();
+      console.log("[PhoneUI] persona detection skipped");
     }
     updatePhoneState();
   }) as EventListener);

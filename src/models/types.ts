@@ -89,6 +89,16 @@ export interface SessionEntry {
   };
 }
 
+export interface Persona {
+  id: string;
+  name: string;
+  aliases: string[];
+  createdAt: string;
+  lastSeenAt: string;
+  sessionIds: string[];
+  notes: string;
+}
+
 export interface IMemoryStore {
   pin(item: { text: string; source: string }, sessionId?: string): void;
   recall(query: string): Promise<{ found: boolean; matches?: string[]; context?: string }>;
@@ -109,6 +119,11 @@ export interface IMemoryStore {
   addCommitment(entry: { text: string; owner?: string; dueDate?: string }, sessionId?: string): void;
   addDecision(text: string, sessionId?: string): void;
   addEntity(entry: { text: string; type: EntityType; context: string }, sessionId?: string): void;
+  createPersona(name: string, sessionId?: string): Persona;
+  getPersonas(): Persona[];
+  getPersonaById(id: string): Persona | undefined;
+  updatePersona(id: string, updates: Partial<Pick<Persona, "name" | "aliases" | "notes">>): void;
+  linkArtifactToPersona(personaId: string, sessionId: string): void;
   toJSON(): string;
   loadJSON(json: string): void;
 }

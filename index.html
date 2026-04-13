@@ -351,6 +351,47 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
   overflow-y:auto;display:none;margin-bottom:var(--gap-sm)}
 .exp-fallback.show{display:block}
 
+/* ══════════════ PERSONAS ══════════════ */
+.persona-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:var(--gap);margin-bottom:var(--gap-sm);cursor:pointer;transition:background .1s;
+  border-left:3px solid var(--blue)}
+.persona-card:active{background:var(--surface-2)}
+.persona-name{font:600 var(--fs-md)/1.2 var(--sans);color:var(--text)}
+.persona-meta{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:4px}
+.persona-sessions{font:400 var(--fs-xs)/1 var(--mono);color:var(--muted);margin-top:4px}
+.pd-hdr{display:flex;align-items:center;gap:8px;padding-bottom:var(--gap-sm);border-bottom:1px solid var(--border);margin-bottom:var(--gap-sm)}
+.pd-back{min-width:var(--tap);min-height:var(--tap);display:flex;align-items:center;
+  font:600 var(--fs-sm)/1 var(--mono);color:var(--accent-dim);gap:4px}
+.pd-back:active{opacity:.6}
+.pd-info{flex:1;min-width:0;text-align:center}
+.pd-name{font:600 var(--fs-lg)/1.2 var(--sans);color:var(--text)}
+.pd-dates{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:3px}
+.pd-tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border);margin-bottom:var(--gap-sm)}
+.pd-tabs::-webkit-scrollbar{display:none}
+.pd-tab{font:400 var(--fs-xs)/1 var(--mono);letter-spacing:.5px;padding:10px 12px;
+  white-space:nowrap;color:var(--dim);border-bottom:2px solid transparent;min-height:var(--tap);
+  display:flex;align-items:center;transition:all .12s;flex-shrink:0}
+.pd-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.pd-tab:active{opacity:.6}
+.pd-content{min-height:200px}
+.pd-overview{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:var(--gap);margin-bottom:var(--gap-sm);font:400 var(--fs-sm)/var(--lh) var(--sans);color:var(--muted)}
+.pd-stat{display:inline-flex;align-items:center;gap:4px;font:400 var(--fs-xs)/1 var(--mono);
+  color:var(--dim);margin-right:12px}
+.persona-banner{display:none;background:var(--blue-muted);border:1px solid rgba(68,136,255,.3);
+  border-radius:var(--radius-sm);padding:12px var(--gap);margin-bottom:var(--gap-sm);
+  animation:bannerIn .3s ease}
+.persona-banner.show{display:block}
+.persona-banner-text{font:500 var(--fs-sm)/1.3 var(--sans);color:var(--text);margin-bottom:8px}
+.persona-banner-name{color:var(--blue);font-weight:700}
+.persona-banner-btns{display:flex;gap:8px}
+.persona-banner-btn{font:600 var(--fs-xs)/1 var(--mono);letter-spacing:.5px;padding:8px 16px;
+  border-radius:var(--radius-sm);min-height:36px;display:flex;align-items:center}
+.persona-banner-btn.create{background:var(--blue-muted);border:1px solid var(--blue);color:var(--blue)}
+.persona-banner-btn.skip{border:1px solid var(--border);color:var(--dim)}
+.persona-banner-btn:active{opacity:.7}
+@keyframes bannerIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
 /* ══════════════ RESPONSIVE ══════════════ */
 @media(min-width:430px){
   .kpi{grid-template-columns:repeat(4,1fr)}
@@ -375,6 +416,13 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
   <div class="card status-card" id="status-card">
     <div class="status-left"><div class="status-dot live" id="s-dot"></div><span class="status-text" id="s-text">LISTENING</span></div>
     <span class="status-timer" id="s-timer">00:00</span>
+  </div>
+  <div class="persona-banner" id="persona-banner">
+    <div class="persona-banner-text">New person detected: <span class="persona-banner-name" id="pb-name"></span></div>
+    <div class="persona-banner-btns">
+      <button class="persona-banner-btn create" id="pb-create">CREATE PERSONA</button>
+      <button class="persona-banner-btn skip" id="pb-skip">SKIP</button>
+    </div>
   </div>
   <div class="kpi" id="kpi"></div>
   <div class="chips-scroll" id="achips"></div>
@@ -410,6 +458,21 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
   </div>
 </div>
 
+<!-- ═══ PERSONAS ═══ -->
+<div id="pg-personas" class="page">
+  <div id="persona-list"></div>
+  <div class="empty" id="persona-empty">No personas yet. They appear when people are detected in conversations.</div>
+  <div id="pd-view" style="display:none">
+    <div class="pd-hdr">
+      <button class="pd-back" id="pd-back">&larr; PERSONAS</button>
+      <div class="pd-info"><div class="pd-name" id="pd-name"></div><div class="pd-dates" id="pd-dates"></div></div>
+      <div style="min-width:48px"></div>
+    </div>
+    <div class="pd-tabs" id="pd-tabs"></div>
+    <div class="pd-content" id="pd-content"></div>
+  </div>
+</div>
+
 <!-- ═══ CONTROL ═══ -->
 <div id="pg-control" class="page">
   <div class="sh"><span class="sh-t">Analyzers</span><span class="sh-badge" id="a-badge"></span><span class="sh-line"></span></div>
@@ -432,6 +495,7 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
 <div id="nav">
   <button class="nav-btn active" data-pg="now"><span class="nav-icon">&#9679;</span>NOW</button>
   <button class="nav-btn" data-pg="library"><span class="nav-icon">&#9776;</span>LIBRARY</button>
+  <button class="nav-btn" data-pg="personas"><span class="nav-icon">&#9673;</span>PERSONAS</button>
   <button class="nav-btn" data-pg="control"><span class="nav-icon">&#9881;</span>CONTROL</button>
 </div>
 </div><!-- #app -->
@@ -488,12 +552,14 @@ var MC={ALERT:"alert",CARD:"card-t",COMPACT:"card-t",PASSIVE:"passive"};
 
 /* ── STATE ── */
 var curFilter="sessions",searchQ="",lastVer=0,fired={},connEntityFilter="";
+var pdPid="",pdTab="overview",personaBannerTimer=null,lastPendingName=null;
 
 /* ── HELPERS ── */
 function esc(s){var d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
 function rel(ts){if(!ts)return"";var d=Math.floor((Date.now()-ts)/1000);if(d<60)return d+"s";if(d<3600)return Math.floor(d/60)+"m";return Math.floor(d/3600)+"h"}
 function dur(ms){var s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);return(h?String(h).padStart(2,"0")+":":"")+String(m%60).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
 function fire(p){window.dispatchEvent(new CustomEvent("validateai-trigger",{detail:{phrase:p}}))}
+function firePersona(action,name,sessionId){window.dispatchEvent(new CustomEvent("validateai-persona",{detail:{action:action,name:name,sessionId:sessionId}}))}
 
 /* ── KEYBOARD INSET ── */
 if(window.visualViewport){var vv=window.visualViewport;vv.addEventListener("resize",function(){
@@ -503,7 +569,7 @@ if(window.visualViewport){var vv=window.visualViewport;vv.addEventListener("resi
 
 /* ── NAV ── */
 var navBtns=document.querySelectorAll(".nav-btn"),pages=document.querySelectorAll(".page"),
-    titles={now:"NOW",library:"LIBRARY",control:"CONTROL"},titleEl=document.getElementById("topbar-title");
+    titles={now:"NOW",library:"LIBRARY",personas:"PERSONAS",control:"CONTROL"},titleEl=document.getElementById("topbar-title");
 navBtns.forEach(function(n){n.addEventListener("click",function(){
   navBtns.forEach(function(x){x.classList.remove("active")});pages.forEach(function(p){p.classList.remove("active")});
   n.classList.add("active");document.getElementById("pg-"+n.dataset.pg).classList.add("active");
@@ -554,6 +620,25 @@ document.getElementById("end-btn").addEventListener("click",function(){modalEl.c
 document.getElementById("m-no").addEventListener("click",function(){modalEl.classList.remove("show")});
 document.getElementById("m-yes").addEventListener("click",function(){modalEl.classList.remove("show");fire("even forget")});
 
+/* ── PERSONA BANNER ── */
+document.getElementById("pb-create").addEventListener("click",function(){
+  var S=window.validateAIState;if(!S||!S.pendingPersonaDetection)return;
+  var pd=S.pendingPersonaDetection;firePersona("CREATE",pd.name,pd.sessionId);
+  document.getElementById("persona-banner").classList.remove("show");
+  if(personaBannerTimer){clearTimeout(personaBannerTimer);personaBannerTimer=null}lastPendingName=null;
+});
+document.getElementById("pb-skip").addEventListener("click",function(){
+  firePersona("SKIP");
+  document.getElementById("persona-banner").classList.remove("show");
+  if(personaBannerTimer){clearTimeout(personaBannerTimer);personaBannerTimer=null}lastPendingName=null;
+});
+
+/* ── PERSONA DETAIL ── */
+var pdViewEl=document.getElementById("pd-view");
+document.getElementById("pd-back").addEventListener("click",function(){
+  pdViewEl.style.display="none";pdPid="";
+});
+
 /* ── DETAIL SHEET ── */
 var detBg=document.getElementById("detail-bg"),detBody=document.getElementById("detail-body");
 detBg.addEventListener("click",function(e){if(e.target===detBg)detBg.classList.remove("show")});
@@ -589,6 +674,18 @@ function rNow(S){
     outs.forEach(function(o){var cls=MC[o.suggestedHudMode]||"passive",bc=CB[o.confidence]||"b-low";
       fh+='<div class="fi '+cls+'"><div class="fi-content"><div class="fi-title">'+esc(o.title)+'</div><div class="fi-summary">'+esc(o.summary)+'</div><div class="fi-meta"><span class="b '+bc+'">'+esc(o.confidence)+'</span><span>'+esc(o.analyzer)+'</span></div></div></div>'});
     fL.innerHTML=fh}
+
+  /* Persona detection banner */
+  var banner=document.getElementById("persona-banner");
+  if(S.pendingPersonaDetection){
+    var pn=S.pendingPersonaDetection.name;
+    document.getElementById("pb-name").textContent=pn;
+    banner.classList.add("show");
+    if(pn!==lastPendingName){lastPendingName=pn;
+      if(personaBannerTimer)clearTimeout(personaBannerTimer);
+      personaBannerTimer=setTimeout(function(){firePersona("SKIP");banner.classList.remove("show");lastPendingName=null},30000)}
+  }else{banner.classList.remove("show");lastPendingName=null;
+    if(personaBannerTimer){clearTimeout(personaBannerTimer);personaBannerTimer=null}}
 }
 
 /* ── RENDER: SESSION FAB ── */
@@ -1015,6 +1112,131 @@ function rConn(S){
   if(clearBtn)clearBtn.addEventListener("click",function(){connEntityFilter="";});
 }
 
+/* ── RENDER: PERSONAS ── */
+function rPersonas(S){
+  if(pdPid){renderPD();return}
+  var pL=document.getElementById("persona-list"),pE=document.getElementById("persona-empty");
+  pdViewEl.style.display="none";pL.style.display="";
+  var personas=S.personas||[];
+  if(!personas.length){pL.innerHTML="";pE.style.display="";return}
+  pE.style.display="none";
+  var sorted=personas.slice().sort(function(a,b){return new Date(b.lastSeenAt).getTime()-new Date(a.lastSeenAt).getTime()});
+  var h="";
+  sorted.forEach(function(p){
+    var lastSeen=p.lastSeenAt?new Date(p.lastSeenAt).toLocaleDateString(undefined,{month:"short",day:"numeric"}):"";
+    var sessCount=p.sessionIds?p.sessionIds.length:0;
+    h+='<div class="persona-card" data-pid="'+esc(p.id)+'">';
+    h+='<div class="persona-name">'+esc(p.name)+'</div>';
+    h+='<div class="persona-meta">Last seen: '+esc(lastSeen)+'</div>';
+    h+='<div class="persona-sessions">'+sessCount+' session'+(sessCount!==1?"s":"")+'</div>';
+    h+='</div>';
+  });
+  pL.innerHTML=h;
+  pL.querySelectorAll(".persona-card").forEach(function(el){el.addEventListener("click",function(){
+    openPersonaDetail(el.dataset.pid);
+  })});
+}
+
+function openPersonaDetail(pid){
+  pdPid=pid;pdTab="overview";
+  document.getElementById("persona-list").style.display="none";
+  document.getElementById("persona-empty").style.display="none";
+  pdViewEl.style.display="";
+  renderPD();
+}
+
+function renderPD(){
+  var S=window.validateAIState;if(!S||!pdPid)return;
+  var personas=S.personas||[];
+  var p=personas.find(function(x){return x.id===pdPid});if(!p)return;
+  document.getElementById("pd-name").textContent=p.name;
+  var created=p.createdAt?new Date(p.createdAt).toLocaleDateString(undefined,{month:"short",day:"numeric"}):"";
+  var lastSeen=p.lastSeenAt?new Date(p.lastSeenAt).toLocaleDateString(undefined,{month:"short",day:"numeric"}):"";
+  var sessCount=p.sessionIds?p.sessionIds.length:0;
+  document.getElementById("pd-dates").textContent="First: "+created+" \u00b7 Last: "+lastSeen+" \u00b7 "+sessCount+" session"+(sessCount!==1?"s":"");
+
+  var TABS=[{id:"overview",l:"OVERVIEW"},{id:"commitments",l:"COMMITMENTS"},{id:"decisions",l:"DECISIONS"},
+    {id:"entities",l:"ENTITIES"},{id:"sessions",l:"SESSIONS"},{id:"signals",l:"SIGNALS"}];
+  var th="";TABS.forEach(function(t){th+='<button class="pd-tab'+(t.id===pdTab?" active":"")+'" data-t="'+t.id+'">'+t.l+'</button>'});
+  document.getElementById("pd-tabs").innerHTML=th;
+  document.getElementById("pd-tabs").querySelectorAll(".pd-tab").forEach(function(t){t.addEventListener("click",function(){pdTab=t.dataset.t;renderPD()})});
+
+  var sids=p.sessionIds||[];
+  var allCommits=[],allDecisions=[],allEntities=[],allSessions=[];
+  sids.forEach(function(sid){
+    (S.commitments||[]).forEach(function(c){if(c.sessionId===sid)allCommits.push(c)});
+    (S.decisionsRaw||[]).forEach(function(d){if(d.sessionId===sid)allDecisions.push(d)});
+    (S.entities||[]).forEach(function(e){if(e.sessionId===sid)allEntities.push(e)});
+    var sess=(S.sessions||[]).find(function(x){return x.id===sid});
+    if(sess)allSessions.push(sess);
+  });
+
+  var nameL=p.name.toLowerCase();
+  var relevantCommits=allCommits.filter(function(c){return(c.text||"").toLowerCase().indexOf(nameL)!==-1||(c.owner||"").toLowerCase().indexOf(nameL)!==-1});
+  var relevantDecisions=allDecisions.filter(function(d){return((d.text||d)||"").toLowerCase().indexOf(nameL)!==-1});
+  var relevantEntities=allEntities.filter(function(e){return(e.text||"").toLowerCase().indexOf(nameL)!==-1||(e.context||"").toLowerCase().indexOf(nameL)!==-1});
+
+  var ch="";
+  if(pdTab==="overview"){
+    ch='<div class="pd-overview">';
+    if(p.notes){ch+=esc(p.notes)}
+    else{ch+='Person detected across '+sessCount+' session'+(sessCount!==1?"s":"")+'. '
+      +relevantCommits.length+' commitment'+(relevantCommits.length!==1?"s":"")+', '
+      +relevantDecisions.length+' decision'+(relevantDecisions.length!==1?"s":"")+', '
+      +relevantEntities.length+' related entit'+(relevantEntities.length!==1?"ies":"y")+'.'}
+    ch+='</div>';
+    ch+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">';
+    ch+='<span class="pd-stat"><span class="b b-commit">'+relevantCommits.length+'</span> commitments</span>';
+    ch+='<span class="pd-stat"><span class="b b-decision">'+relevantDecisions.length+'</span> decisions</span>';
+    ch+='<span class="pd-stat"><span class="b b-entity">'+relevantEntities.length+'</span> entities</span>';
+    ch+='<span class="pd-stat"><span class="b b-person">'+sessCount+'</span> sessions</span>';
+    ch+='</div>';
+    if(p.aliases&&p.aliases.length){ch+='<div style="font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:8px">Also known as: '+p.aliases.map(function(a){return esc(a)}).join(", ")+'</div>'}
+  }
+  else if(pdTab==="commitments"){
+    if(!relevantCommits.length){ch='<div class="empty">No commitments linked to this persona</div>'}
+    else{relevantCommits.forEach(function(c){
+      var meta=[];if(c.owner)meta.push(esc(c.owner));if(c.dueDate)meta.push("by "+esc(c.dueDate));if(c.ts)meta.push(rel(c.ts));
+      ch+='<div class="sd-item"><span class="b b-commit">COMMIT</span><div class="sd-item-body"><div class="sd-item-text">'+esc(c.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(" &middot; ")+'</div>':'')+'</div></div>';
+    })}
+  }
+  else if(pdTab==="decisions"){
+    if(!relevantDecisions.length){ch='<div class="empty">No decisions linked to this persona</div>'}
+    else{relevantDecisions.forEach(function(d){
+      var text=d.text||d;
+      ch+='<div class="sd-item"><span class="b b-decision">DECISION</span><div class="sd-item-body"><div class="sd-item-text">'+esc(text)+'</div>'+(d.ts?'<div class="sd-item-meta">'+rel(d.ts)+'</div>':'')+'</div></div>';
+    })}
+  }
+  else if(pdTab==="entities"){
+    if(!relevantEntities.length){ch='<div class="empty">No entities linked to this persona</div>'}
+    else{relevantEntities.forEach(function(e){
+      ch+='<div class="sd-item"><span class="b '+(EB[e.type]||"b-entity")+'">'+esc(e.type)+'</span><div class="sd-item-body"><div class="sd-item-text">'+esc(e.text)+'</div><div class="sd-item-meta">'+esc(e.context||"")+(e.ts?' &middot; '+rel(e.ts):'')+'</div></div></div>';
+    })}
+  }
+  else if(pdTab==="sessions"){
+    if(!allSessions.length){ch='<div class="empty">No sessions linked to this persona</div>'}
+    else{allSessions.forEach(function(s){
+      var isActive=s.status==="active";
+      var dStr=isActive?"ongoing":"";
+      if(!isActive&&s.startedAt&&s.endedAt){dStr=Math.round((new Date(s.endedAt).getTime()-new Date(s.startedAt).getTime())/60000)+" min"}
+      ch+='<div class="sess-card'+(isActive?" sess-active":"")+'">';
+      ch+='<div class="sess-label">'+esc(s.label)+'</div>';
+      if(dStr)ch+='<div class="sess-dur">'+esc(dStr)+'</div>';
+      ch+='<span class="sess-status '+(isActive?"active":"completed")+'">'+(isActive?"\u25cf ACTIVE":"COMPLETED")+'</span>';
+      ch+='</div>';
+    })}
+  }
+  else if(pdTab==="signals"){
+    var signals=(S.recentOutputs||[]).filter(function(o){return o.triggered&&(o.summary||"").toLowerCase().indexOf(nameL)!==-1});
+    if(!signals.length){ch='<div class="empty">No signals linked to this persona</div>'}
+    else{signals.forEach(function(o){
+      var cls=MC[o.suggestedHudMode]||"passive",bc=CB[o.confidence]||"b-low";
+      ch+='<div class="fi '+cls+'"><div class="fi-content"><div class="fi-title">'+esc(o.title)+'</div><div class="fi-summary">'+esc(o.summary)+'</div><div class="fi-meta"><span class="b '+bc+'">'+esc(o.confidence)+'</span><span>'+esc(o.analyzer)+'</span></div></div></div>';
+    })}
+  }
+  document.getElementById("pd-content").innerHTML=ch;
+}
+
 /* ── RENDER: CONTROL ── */
 function rCtrl(S){
   var dis=S.activeAnalyzers||[];
@@ -1051,7 +1273,7 @@ setInterval(function(){
   if(!S){document.getElementById("s-text").textContent="CONNECTING...";return}
   if(S.version===lastVer)return;
   lastVer=S.version||0;
-  countFired(S);rSessFab(S);rNow(S);rLib(S);rCtrl(S);
+  countFired(S);rSessFab(S);rNow(S);rLib(S);rPersonas(S);rCtrl(S);
 },250);
 
 })();

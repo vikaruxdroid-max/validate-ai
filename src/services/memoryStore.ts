@@ -1,6 +1,6 @@
 import { claudeRequest } from "./claude";
 import { RECALL_SYSTEM } from "../prompts/haiku";
-import type { IMemoryStore, CommitmentEntry, EntityEntry, EntityType, PinnedItem, SessionEntry } from "../models/types";
+import type { IMemoryStore, CommitmentEntry, EntityEntry, EntityType, PinnedItem, SessionEntry, Persona } from "../models/types";
 
 const PROXY_BASE = "https://vikarux-g2.centralus.cloudapp.azure.com:3001";
 
@@ -10,6 +10,7 @@ export class MemoryStore implements IMemoryStore {
   private decisions: { text: string; ts: number; sessionId?: string }[] = [];
   private entities: EntityEntry[] = [];
   private sessions: SessionEntry[] = [];
+  private personas: Persona[] = [];
   private activeSessionId: string | null = null;
   private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -118,12 +119,58 @@ export class MemoryStore implements IMemoryStore {
   /** Get raw decisions with metadata (for session grouping). */
   getDecisionsRaw() { return [...this.decisions]; }
 
+  // ── Personas ──────────────────────────────────────────────────────
+
+  createPersona(name: string, sessionId?: string): Persona {
+    const now = new Date().toISOString();
+    const persona: Persona = {
+      id: "persona_" + crypto.randomUUID(),
+      name,
+      aliases: [],
+      createdAt: now,
+      lastSeenAt: now,
+      sessionIds: sessionId ? [sessionId] : [],
+      notes: "",
+    };
+    this.personas.push(persona);
+    console.log("[MemoryStore] persona created:", persona.name);
+    return persona;
+  }
+
+  getPersonas(): Persona[] {
+    return [...this.personas];
+  }
+
+  getPersonaById(id: string): Persona | undefined {
+    return this.personas.find((p) => p.id === id);
+  }
+
+  updatePersona(id: string, updates: Partial<Pick<Persona, "name" | "aliases" | "notes">>): void {
+    const p = this.personas.find((x) => x.id === id);
+    if (!p) return;
+    if (updates.name !== undefined) p.name = updates.name;
+    if (updates.aliases !== undefined) p.aliases = updates.aliases;
+    if (updates.notes !== undefined) p.notes = updates.notes;
+    console.log("[MemoryStore] persona updated:", p.name);
+  }
+
+  linkArtifactToPersona(personaId: string, sessionId: string): void {
+    const p = this.personas.find((x) => x.id === personaId);
+    if (!p) return;
+    if (!p.sessionIds.includes(sessionId)) {
+      p.sessionIds.push(sessionId);
+    }
+    p.lastSeenAt = new Date().toISOString();
+    console.log("[MemoryStore] linked session to persona:", p.name, sessionId);
+  }
+
   clearSession(): void {
     this.pinned = [];
     this.commitments = [];
     this.decisions = [];
     this.entities = [];
     this.sessions = [];
+    this.personas = [];
     this.activeSessionId = null;
     console.log("[MemoryStore] session cleared");
   }
@@ -173,6 +220,7 @@ export class MemoryStore implements IMemoryStore {
       decisions: this.decisions,
       entities: this.entities,
       sessions: this.sessions,
+      personas: this.personas,
       activeSessionId: this.activeSessionId,
     });
   }
@@ -190,6 +238,7 @@ export class MemoryStore implements IMemoryStore {
       }
       this.entities = data.entities ?? [];
       this.sessions = data.sessions ?? [];
+      this.personas = data.personas ?? [];
       this.activeSessionId = data.activeSessionId ?? null;
       console.log("[MemoryStore] loaded — sessions:", this.sessions.length,
         "commitments:", this.commitments.length);
