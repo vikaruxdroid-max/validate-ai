@@ -1339,9 +1339,11 @@ function renderPD(){
   });
 
   var nameL=p.name.toLowerCase();
-  var relevantCommits=allCommits.filter(function(c){return(c.text||"").toLowerCase().indexOf(nameL)!==-1||(c.owner||"").toLowerCase().indexOf(nameL)!==-1});
-  var relevantDecisions=allDecisions.filter(function(d){return((d.text||d)||"").toLowerCase().indexOf(nameL)!==-1});
-  var relevantEntities=allEntities.filter(function(e){return(e.text||"").toLowerCase().indexOf(nameL)!==-1||(e.context||"").toLowerCase().indexOf(nameL)!==-1});
+  var allNames=[nameL].concat((p.aliases||[]).map(function(a){return a.toLowerCase()}));
+  function matchN(t){var tl=(t||"").toLowerCase();return allNames.some(function(n){return tl.indexOf(n)!==-1})}
+  var relevantCommits=allCommits.filter(function(c){return matchN(c.text)||matchN(c.owner)});
+  var relevantDecisions=allDecisions.filter(function(d){return matchN(d.text||d)});
+  var relevantEntities=allEntities.filter(function(e){return matchN(e.text)||matchN(e.context)});
   var cStatuses=S.commitmentStatuses||{};
 
   var ch="";
@@ -1404,7 +1406,7 @@ function renderPD(){
     })}
   }
   else if(pdTab==="signals"){ch=renderSignals(p,allSessions,relevantCommits,cStatuses)}
-  else if(pdTab==="delta"){ch=renderDelta(p,allSessions,S,nameL,cStatuses)}
+  else if(pdTab==="delta"){ch=renderDelta(p,allSessions,S,allNames,cStatuses)}
   document.getElementById("pd-content").innerHTML=ch;
   document.querySelectorAll(".commit-toggle").forEach(function(el){
     el.addEventListener("click",function(){var txt=el.dataset.ct,wasDone=el.dataset.done==="1";firePersona("TOGGLE_COMMITMENT",null,null,null,null,txt,!wasDone)});
@@ -1465,13 +1467,14 @@ function renderSignals(p,allSessions,relevantCommits,cStatuses){
   return ch;
 }
 
-function renderDelta(p,allSessions,S,nameL,cStatuses){
+function renderDelta(p,allSessions,S,allNames,cStatuses){
   if(allSessions.length<2)return'<div class="empty">Delta requires 2+ sessions with this persona.</div>';
   var curr=allSessions[0],prev=allSessions[1];
   var ch='<div style="font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-bottom:var(--gap)">Comparing: '+esc(curr.label)+' vs '+esc(prev.label)+'</div>';
 
-  var currC=(S.commitments||[]).filter(function(c){return c.sessionId===curr.id&&((c.text||"").toLowerCase().indexOf(nameL)!==-1||(c.owner||"").toLowerCase().indexOf(nameL)!==-1)});
-  var prevC=(S.commitments||[]).filter(function(c){return c.sessionId===prev.id&&((c.text||"").toLowerCase().indexOf(nameL)!==-1||(c.owner||"").toLowerCase().indexOf(nameL)!==-1)});
+  function dMatchN(t){var tl=(t||"").toLowerCase();return allNames.some(function(n){return tl.indexOf(n)!==-1})}
+  var currC=(S.commitments||[]).filter(function(c){return c.sessionId===curr.id&&(dMatchN(c.text)||dMatchN(c.owner))});
+  var prevC=(S.commitments||[]).filter(function(c){return c.sessionId===prev.id&&(dMatchN(c.text)||dMatchN(c.owner))});
   var currE=(S.entities||[]).filter(function(e){return e.sessionId===curr.id});
   var prevE=(S.entities||[]).filter(function(e){return e.sessionId===prev.id});
 

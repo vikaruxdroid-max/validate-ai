@@ -165,6 +165,48 @@ export class MemoryStore implements IMemoryStore {
     console.log("[MemoryStore] linked session to persona:", p.name, sessionId);
   }
 
+  /** Check a new artifact against all personas and link its session if name matches. */
+  checkPersonaLinkForArtifact(text: string, sessionId?: string): void {
+    if (!sessionId) return;
+    const lowerText = text.toLowerCase();
+    for (const p of this.personas) {
+      const names = [p.name, ...p.aliases].map(n => n.toLowerCase());
+      if (names.some(n => lowerText.includes(n))) {
+        if (!p.sessionIds.includes(sessionId)) {
+          p.sessionIds.push(sessionId);
+          console.log("[MemoryStore] auto-linked session to persona:", p.name, sessionId);
+        }
+        p.lastSeenAt = new Date().toISOString();
+      }
+    }
+  }
+
+  /** Retroactively scan all artifacts and link sessions to a newly created persona. */
+  retroactiveLinkPersona(personaId: string): void {
+    const p = this.personas.find(x => x.id === personaId);
+    if (!p) return;
+    const names = [p.name, ...p.aliases].map(n => n.toLowerCase());
+    const sessionSet = new Set(p.sessionIds);
+
+    for (const c of this.commitments) {
+      const text = ((c.text || "") + " " + (c.owner || "")).toLowerCase();
+      if (c.sessionId && names.some(n => text.includes(n))) sessionSet.add(c.sessionId);
+    }
+    for (const d of this.decisions) {
+      if (d.sessionId && names.some(n => d.text.toLowerCase().includes(n))) sessionSet.add(d.sessionId);
+    }
+    for (const e of this.entities) {
+      const text = ((e.text || "") + " " + (e.context || "")).toLowerCase();
+      if (e.sessionId && names.some(n => text.includes(n))) sessionSet.add(e.sessionId);
+    }
+    for (const pin of this.pinned) {
+      if (pin.sessionId && names.some(n => pin.text.toLowerCase().includes(n))) sessionSet.add(pin.sessionId);
+    }
+
+    p.sessionIds = Array.from(sessionSet);
+    console.log("[MemoryStore] retroactive link for", p.name, ":", p.sessionIds.length, "sessions");
+  }
+
   setPersonaBrief(personaId: string, brief: PersonaBrief): void {
     const p = this.personas.find((x) => x.id === personaId);
     if (p) { p.brief = brief; console.log("[MemoryStore] brief cached for:", p.name); }
@@ -206,36 +248,38 @@ export class MemoryStore implements IMemoryStore {
 
   addCommitment(entry: { text: string; owner?: string; dueDate?: string }, sessionId?: string): void {
     if (this.commitments.some((c) => c.text === entry.text)) return;
+    const sid = sessionId ?? this.activeSessionId ?? undefined;
     this.commitments.push({
       text: entry.text,
       owner: entry.owner,
       dueDate: entry.dueDate,
       ts: Date.now(),
-      sessionId: sessionId ?? this.activeSessionId ?? undefined,
+      sessionId: sid,
     });
     console.log("[MemoryStore] commitment:", entry.text);
+    this.checkPersonaLinkForArtifact((entry.text || "") + " " + (entry.owner || ""), sid);
   }
 
   addDecision(text: string, sessionId?: string): void {
     if (this.decisions.some((d) => d.text === text)) return;
-    this.decisions.push({
-      text,
-      ts: Date.now(),
-      sessionId: sessionId ?? this.activeSessionId ?? undefined,
-    });
+    const sid = sessionId ?? this.activeSessionId ?? undefined;
+    this.decisions.push({ text, ts: Date.now(), sessionId: sid });
     console.log("[MemoryStore] decision:", text);
+    this.checkPersonaLinkForArtifact(text, sid);
   }
 
   addEntity(entry: { text: string; type: EntityType; context: string }, sessionId?: string): void {
     if (this.entities.some((e) => e.text === entry.text)) return;
+    const sid = sessionId ?? this.activeSessionId ?? undefined;
     this.entities.push({
       text: entry.text,
       type: entry.type,
       context: entry.context,
       ts: Date.now(),
-      sessionId: sessionId ?? this.activeSessionId ?? undefined,
+      sessionId: sid,
     });
     console.log("[MemoryStore] entity:", entry.type, entry.text);
+    this.checkPersonaLinkForArtifact((entry.text || "") + " " + (entry.context || ""), sid);
   }
 
   // ── Persistence ───────────────────────────────────────────────────

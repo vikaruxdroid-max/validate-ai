@@ -385,9 +385,10 @@ async function main(): Promise<void> {
       if (!p.sessionIds.includes(endedSessionId)) continue;
       // Build signal snapshot
       const sessionCommits = commitments.filter(c => c.sessionId === endedSessionId);
-      const nameL = p.name.toLowerCase();
+      const allNames = [p.name, ...(p.aliases || [])].map(n => n.toLowerCase());
+      const matchesName = (text: string) => allNames.some(n => text.toLowerCase().includes(n));
       const relCommits = sessionCommits.filter(c =>
-        (c.text || "").toLowerCase().includes(nameL) || (c.owner || "").toLowerCase().includes(nameL));
+        matchesName(c.text || "") || matchesName(c.owner || ""));
       const hedgingScores = outputs.filter(o => o.analyzer === "hedging" && o.triggered && o.details?.score != null)
         .map(o => Number(o.details!.score));
       const intentCounts: Record<string, number> = {};
@@ -500,6 +501,7 @@ async function main(): Promise<void> {
     if (action === "CREATE") {
       const persona = store.createPersona(name, sessionId);
       if (sessionId) store.linkArtifactToPersona(persona.id, sessionId);
+      store.retroactiveLinkPersona(persona.id);
       orchestrator.clearPendingPersonaDetection();
       console.log("[PhoneUI] persona created:", name);
     } else if (action === "SKIP") {

@@ -154,6 +154,8 @@ export interface IMemoryStore {
   getPersonaById(id: string): Persona | undefined;
   updatePersona(id: string, updates: Partial<Pick<Persona, "name" | "aliases" | "notes">>): void;
   linkArtifactToPersona(personaId: string, sessionId: string): void;
+  checkPersonaLinkForArtifact(text: string, sessionId?: string): void;
+  retroactiveLinkPersona(personaId: string): void;
   setPersonaBrief(personaId: string, brief: PersonaBrief): void;
   addPersonaSignalSnapshot(personaId: string, snapshot: PersonaSignalSnapshot): void;
   setCommitmentStatus(commitmentText: string, done: boolean): void;
