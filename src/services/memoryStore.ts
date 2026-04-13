@@ -1,6 +1,6 @@
 import { claudeRequest } from "./claude";
 import { RECALL_SYSTEM } from "../prompts/haiku";
-import type { IMemoryStore, CommitmentEntry, EntityEntry, EntityType, PinnedItem, SessionEntry, Persona } from "../models/types";
+import type { IMemoryStore, CommitmentEntry, EntityEntry, EntityType, PinnedItem, SessionEntry, Persona, PersonaBrief, PersonaSignalSnapshot } from "../models/types";
 
 const PROXY_BASE = "https://vikarux-g2.centralus.cloudapp.azure.com:3001";
 
@@ -11,6 +11,7 @@ export class MemoryStore implements IMemoryStore {
   private entities: EntityEntry[] = [];
   private sessions: SessionEntry[] = [];
   private personas: Persona[] = [];
+  private commitmentStatuses: Record<string, boolean> = {};
   private activeSessionId: string | null = null;
   private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -164,6 +165,31 @@ export class MemoryStore implements IMemoryStore {
     console.log("[MemoryStore] linked session to persona:", p.name, sessionId);
   }
 
+  setPersonaBrief(personaId: string, brief: PersonaBrief): void {
+    const p = this.personas.find((x) => x.id === personaId);
+    if (p) { p.brief = brief; console.log("[MemoryStore] brief cached for:", p.name); }
+  }
+
+  addPersonaSignalSnapshot(personaId: string, snapshot: PersonaSignalSnapshot): void {
+    const p = this.personas.find((x) => x.id === personaId);
+    if (!p) return;
+    if (!p.signalSnapshots) p.signalSnapshots = [];
+    // Avoid duplicate session snapshots
+    if (!p.signalSnapshots.some((s) => s.sessionId === snapshot.sessionId)) {
+      p.signalSnapshots.push(snapshot);
+      console.log("[MemoryStore] signal snapshot added for:", p.name, snapshot.sessionId);
+    }
+  }
+
+  setCommitmentStatus(commitmentText: string, done: boolean): void {
+    this.commitmentStatuses[commitmentText] = done;
+    console.log("[MemoryStore] commitment status:", commitmentText.slice(0, 30), done ? "DONE" : "PENDING");
+  }
+
+  getCommitmentStatuses(): Record<string, boolean> {
+    return { ...this.commitmentStatuses };
+  }
+
   clearSession(): void {
     this.pinned = [];
     this.commitments = [];
@@ -171,6 +197,7 @@ export class MemoryStore implements IMemoryStore {
     this.entities = [];
     this.sessions = [];
     this.personas = [];
+    this.commitmentStatuses = {};
     this.activeSessionId = null;
     console.log("[MemoryStore] session cleared");
   }
@@ -221,6 +248,7 @@ export class MemoryStore implements IMemoryStore {
       entities: this.entities,
       sessions: this.sessions,
       personas: this.personas,
+      commitmentStatuses: this.commitmentStatuses,
       activeSessionId: this.activeSessionId,
     });
   }
@@ -239,6 +267,7 @@ export class MemoryStore implements IMemoryStore {
       this.entities = data.entities ?? [];
       this.sessions = data.sessions ?? [];
       this.personas = data.personas ?? [];
+      this.commitmentStatuses = data.commitmentStatuses ?? {};
       this.activeSessionId = data.activeSessionId ?? null;
       console.log("[MemoryStore] loaded — sessions:", this.sessions.length,
         "commitments:", this.commitments.length);

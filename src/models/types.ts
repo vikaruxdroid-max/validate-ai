@@ -89,6 +89,34 @@ export interface SessionEntry {
   };
 }
 
+export interface PersonaBrief {
+  who: string;
+  lastInteraction: string;
+  openCommitments: string[];
+  openQuestions: string[];
+  signals: string[];
+  behavioralPatterns: Array<{
+    signal: string;
+    observation: string;
+    confidence: string;
+    evidenceCount: number;
+    caveat: string;
+  }>;
+  suggestedFollowUps: string[];
+  nextSteps: string[];
+  generatedAt: number;
+}
+
+export interface PersonaSignalSnapshot {
+  sessionId: string;
+  ts: number;
+  contradictions: number;
+  hedgingScores: number[];
+  intentCounts: Record<string, number>;
+  topicShifts: number;
+  commitmentsMade: number;
+}
+
 export interface Persona {
   id: string;
   name: string;
@@ -97,6 +125,8 @@ export interface Persona {
   lastSeenAt: string;
   sessionIds: string[];
   notes: string;
+  brief?: PersonaBrief;
+  signalSnapshots?: PersonaSignalSnapshot[];
 }
 
 export interface IMemoryStore {
@@ -124,6 +154,10 @@ export interface IMemoryStore {
   getPersonaById(id: string): Persona | undefined;
   updatePersona(id: string, updates: Partial<Pick<Persona, "name" | "aliases" | "notes">>): void;
   linkArtifactToPersona(personaId: string, sessionId: string): void;
+  setPersonaBrief(personaId: string, brief: PersonaBrief): void;
+  addPersonaSignalSnapshot(personaId: string, snapshot: PersonaSignalSnapshot): void;
+  setCommitmentStatus(commitmentText: string, done: boolean): void;
+  getCommitmentStatuses(): Record<string, boolean>;
   toJSON(): string;
   loadJSON(json: string): void;
 }

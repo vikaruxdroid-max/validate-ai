@@ -392,6 +392,87 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
 .persona-banner-btn:active{opacity:.7}
 @keyframes bannerIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 
+/* ══════════════ BRIEF / EDIT SHEETS ══════════════ */
+.brief-section{margin-bottom:var(--gap)}
+.brief-label{font:700 10px/1 var(--mono);letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+.brief-text{font:400 var(--fs-sm)/var(--lh) var(--sans);color:var(--text);margin-bottom:4px}
+.brief-list{list-style:none;padding:0;margin:0 0 4px}
+.brief-list li{font:400 var(--fs-sm)/var(--lh) var(--sans);color:var(--muted);padding:4px 0 4px 12px;
+  border-left:2px solid var(--border);margin-bottom:2px}
+.brief-list li.action{border-left-color:var(--accent-dim);color:var(--text)}
+.brief-refresh{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);display:flex;align-items:center;gap:8px;margin-bottom:var(--gap)}
+.brief-refresh button{font:600 var(--fs-xs)/1 var(--mono);color:var(--accent-dim);min-height:32px;padding:0 12px;
+  border:1px solid var(--accent-dim);border-radius:var(--radius-sm)}
+.brief-refresh button:active{opacity:.6}
+.brief-loading{text-align:center;padding:40px var(--gap);font:400 var(--fs-sm)/1 var(--mono);color:var(--dim)}
+.brief-loading::after{content:"";display:inline-block;width:12px;height:12px;border:2px solid var(--dim);
+  border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-left:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.edit-field{margin-bottom:var(--gap)}
+.edit-label{font:700 var(--fs-xs)/1 var(--mono);letter-spacing:1px;color:var(--dim);margin-bottom:6px;text-transform:uppercase}
+.edit-input{width:100%;min-height:var(--tap);font:400 var(--fs-md)/1 var(--mono);padding:0 12px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text)}
+.edit-input:focus{border-color:var(--accent-dim)}
+.edit-textarea{width:100%;min-height:120px;font:400 var(--fs-sm)/var(--lh) var(--sans);padding:12px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);resize:vertical}
+.edit-textarea:focus{border-color:var(--accent-dim)}
+.edit-save{display:block;width:100%;min-height:var(--tap);font:700 var(--fs-sm)/1 var(--mono);letter-spacing:1px;
+  background:var(--accent-muted);border:1px solid var(--accent-dim);color:var(--accent);border-radius:var(--radius-sm);text-align:center}
+.edit-save:active{opacity:.7}
+
+/* ══════════════ SIGNALS ══════════════ */
+.signal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:var(--gap);margin-bottom:var(--gap-sm)}
+.signal-label{font:700 var(--fs-sm)/1.2 var(--sans);color:var(--text);margin-bottom:4px}
+.signal-value{font:400 var(--fs-sm)/var(--lh) var(--sans);color:var(--muted)}
+.signal-evidence{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:6px}
+.signal-tier{display:inline-flex;font:700 9px/1 var(--mono);padding:2px 6px;border-radius:3px;margin-right:6px;letter-spacing:.5px}
+.signal-tier.stated{background:var(--accent-muted);color:var(--accent)}
+.signal-tier.inferred{background:var(--blue-muted);color:var(--blue)}
+.signal-tier.pattern{background:var(--purple-muted);color:var(--purple)}
+.signal-disclaimer{font:400 var(--fs-xs)/var(--lh) var(--sans);color:var(--dim);font-style:italic;
+  padding:var(--gap);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:var(--gap)}
+.signal-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:6px;background:var(--border)}
+.signal-bar-seg{height:100%;min-width:2px}
+
+/* ══════════════ COMMITMENT TOGGLE ══════════════ */
+.commit-toggle{min-width:var(--tap);min-height:36px;font:700 10px/1 var(--mono);padding:0 10px;
+  border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;
+  letter-spacing:.5px;flex-shrink:0;transition:all .12s}
+.commit-toggle.pending{background:var(--warn-muted);border:1px solid rgba(255,204,0,.3);color:var(--warn)}
+.commit-toggle.done{background:var(--accent-muted);border:1px solid var(--accent-dim);color:var(--accent)}
+.commit-toggle.overdue{background:var(--danger-muted);border:1px solid rgba(255,69,58,.3);color:var(--danger)}
+.commit-toggle:active{opacity:.7}
+
+/* ══════════════ DELTA VIEW ══════════════ */
+.delta-section{margin-bottom:var(--gap)}
+.delta-label{font:700 10px/1 var(--mono);letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+.delta-item{display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:var(--surface);
+  border-radius:var(--radius-sm);margin-bottom:2px;font:400 var(--fs-sm)/1.3 var(--sans);color:var(--muted)}
+.delta-icon{font:700 var(--fs-sm)/1 var(--mono);flex-shrink:0;width:20px;text-align:center}
+.delta-new{color:var(--accent)}.delta-resolved{color:var(--accent)}.delta-unresolved{color:var(--warn)}.delta-changed{color:var(--orange)}
+
+/* ══════════════ PERSONA UPDATE NOTIF ══════════════ */
+.persona-update-banner{display:none;background:var(--accent-muted);border:1px solid var(--accent-dim);
+  border-radius:var(--radius-sm);padding:10px var(--gap);margin-bottom:var(--gap-sm);cursor:pointer;
+  animation:bannerIn .3s ease}
+.persona-update-banner.show{display:block}
+.persona-update-banner:active{opacity:.7}
+.persona-update-text{font:500 var(--fs-sm)/1.3 var(--sans);color:var(--accent)}
+.persona-update-sub{font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:2px}
+
+/* ══════════════ PERSONA CARD BRIEF BTN ══════════════ */
+.persona-card-actions{display:flex;gap:8px;margin-top:8px}
+.persona-brief-btn{font:600 var(--fs-xs)/1 var(--mono);letter-spacing:.5px;padding:6px 14px;
+  border-radius:var(--radius-sm);min-height:32px;display:flex;align-items:center;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--muted);transition:all .12s}
+.persona-brief-btn:active{background:var(--blue-muted);color:var(--blue);border-color:var(--blue)}
+
+/* ══════════════ PD EDIT BUTTON ══════════════ */
+.pd-edit{min-width:var(--tap);min-height:var(--tap);display:flex;align-items:center;justify-content:center;
+  font:600 var(--fs-xs)/1 var(--mono);color:var(--muted);letter-spacing:.5px}
+.pd-edit:active{color:var(--accent)}
+
 /* ══════════════ RESPONSIVE ══════════════ */
 @media(min-width:430px){
   .kpi{grid-template-columns:repeat(4,1fr)}
@@ -416,6 +497,10 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
   <div class="card status-card" id="status-card">
     <div class="status-left"><div class="status-dot live" id="s-dot"></div><span class="status-text" id="s-text">LISTENING</span></div>
     <span class="status-timer" id="s-timer">00:00</span>
+  </div>
+  <div class="persona-update-banner" id="persona-update-banner">
+    <div class="persona-update-text" id="pu-text"></div>
+    <div class="persona-update-sub" id="pu-sub">Tap to view</div>
   </div>
   <div class="persona-banner" id="persona-banner">
     <div class="persona-banner-text">New person detected: <span class="persona-banner-name" id="pb-name"></span></div>
@@ -466,7 +551,7 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
     <div class="pd-hdr">
       <button class="pd-back" id="pd-back">&larr; PERSONAS</button>
       <div class="pd-info"><div class="pd-name" id="pd-name"></div><div class="pd-dates" id="pd-dates"></div></div>
-      <div style="min-width:48px"></div>
+      <button class="pd-edit" id="pd-edit">EDIT</button>
     </div>
     <div class="pd-tabs" id="pd-tabs"></div>
     <div class="pd-content" id="pd-content"></div>
@@ -506,6 +591,8 @@ input{font:inherit;color:inherit;background:none;border:none;outline:none}
 <div class="sheet-bg" id="qa-bg"><div class="sheet"><div class="sheet-handle"></div><div class="sh"><span class="sh-t">Quick Actions</span><span class="sh-line"></span></div><div class="qa-grid" id="qa-grid"></div></div></div>
 <div class="modal-bg" id="modal"><div class="modal"><h3>FORGET ALL MEMORY</h3><p>This erases all stored commitments, decisions, entities, and session data permanently.</p><div class="modal-btns"><button class="m-cancel" id="m-no">CANCEL</button><button class="m-ok" id="m-yes">FORGET</button></div></div></div>
 <div class="modal-bg" id="sess-modal"><div class="modal"><h3 style="color:var(--accent)">END SESSION</h3><p>End this session? All artifacts will be saved.</p><div class="modal-btns"><button class="m-cancel" id="sm-no">CANCEL</button><button class="m-ok" style="background:var(--accent-muted);color:var(--accent);border-color:var(--accent-dim)" id="sm-yes">CONFIRM</button></div></div></div>
+<div class="sheet-bg" id="brief-bg"><div class="sheet"><div class="sheet-handle"></div><div class="sh"><span class="sh-t">Pre-Conversation Brief</span><span class="sh-line"></span></div><div id="brief-body"></div></div></div>
+<div class="sheet-bg" id="edit-bg"><div class="sheet"><div class="sheet-handle"></div><div class="sh"><span class="sh-t">Edit Persona</span><span class="sh-line"></span></div><div class="edit-field"><div class="edit-label">Name</div><input class="edit-input" id="edit-name" type="text"/></div><div class="edit-field"><div class="edit-label">Aliases (comma-separated)</div><input class="edit-input" id="edit-aliases" type="text" placeholder="e.g. Mike, Michael"/></div><div class="edit-field"><div class="edit-label">Notes</div><textarea class="edit-textarea" id="edit-notes" placeholder="Relationship context, background info..."></textarea></div><button class="edit-save" id="edit-save">SAVE</button></div></div>
 
 <!-- GLASSES LOGIC -->
 <script type="module" src="/src/main.ts"></script>
@@ -553,13 +640,14 @@ var MC={ALERT:"alert",CARD:"card-t",COMPACT:"card-t",PASSIVE:"passive"};
 /* ── STATE ── */
 var curFilter="sessions",searchQ="",lastVer=0,fired={},connEntityFilter="";
 var pdPid="",pdTab="overview",personaBannerTimer=null,lastPendingName=null;
+var editPid="",briefPid="";
 
 /* ── HELPERS ── */
 function esc(s){var d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
 function rel(ts){if(!ts)return"";var d=Math.floor((Date.now()-ts)/1000);if(d<60)return d+"s";if(d<3600)return Math.floor(d/60)+"m";return Math.floor(d/3600)+"h"}
 function dur(ms){var s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);return(h?String(h).padStart(2,"0")+":":"")+String(m%60).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
 function fire(p){window.dispatchEvent(new CustomEvent("validateai-trigger",{detail:{phrase:p}}))}
-function firePersona(action,name,sessionId){window.dispatchEvent(new CustomEvent("validateai-persona",{detail:{action:action,name:name,sessionId:sessionId}}))}
+function firePersona(action,name,sessionId,personaId,updates,commitmentText,done){window.dispatchEvent(new CustomEvent("validateai-persona",{detail:{action:action,name:name,sessionId:sessionId,personaId:personaId,updates:updates,commitmentText:commitmentText,done:done}}))}
 
 /* ── KEYBOARD INSET ── */
 if(window.visualViewport){var vv=window.visualViewport;vv.addEventListener("resize",function(){
@@ -639,6 +727,71 @@ document.getElementById("pd-back").addEventListener("click",function(){
   pdViewEl.style.display="none";pdPid="";
 });
 
+/* ── BRIEF SHEET ── */
+var briefBg=document.getElementById("brief-bg"),briefBody=document.getElementById("brief-body");
+briefBg.addEventListener("click",function(e){if(e.target===briefBg)briefBg.classList.remove("show")});
+
+function openBrief(pid){
+  briefPid=pid;var S=window.validateAIState;if(!S)return;
+  var p=(S.personas||[]).find(function(x){return x.id===pid});if(!p)return;
+  renderBriefBody(p);briefBg.classList.add("show");
+  if(!p.brief||Date.now()-(p.brief.generatedAt||0)>1800000){firePersona("BRIEF",null,null,pid)}
+}
+
+function renderBriefBody(p){
+  var h="";
+  if(!p.brief){h='<div class="brief-loading">Generating brief</div>';briefBody.innerHTML=h;return}
+  var b=p.brief,ago=Math.floor((Date.now()-(b.generatedAt||0))/60000);
+  h+='<div class="brief-refresh"><span>Refreshed '+ago+' min ago</span><button id="brief-refresh-btn">REFRESH</button></div>';
+  h+='<div class="brief-section"><div class="brief-label">WHO</div><div class="brief-text">'+esc(b.who||"No summary available")+'</div></div>';
+  h+='<div class="brief-section"><div class="brief-label">LAST INTERACTION</div><div class="brief-text">'+esc(b.lastInteraction||"No prior sessions")+'</div></div>';
+  if(b.openCommitments&&b.openCommitments.length){h+='<div class="brief-section"><div class="brief-label">OPEN COMMITMENTS</div><ul class="brief-list">';b.openCommitments.forEach(function(c){h+='<li class="action">'+esc(c)+'</li>'});h+='</ul></div>'}
+  if(b.openQuestions&&b.openQuestions.length){h+='<div class="brief-section"><div class="brief-label">OPEN QUESTIONS</div><ul class="brief-list">';b.openQuestions.forEach(function(q){h+='<li>'+esc(q)+'</li>'});h+='</ul></div>'}
+  if(b.signals&&b.signals.length){h+='<div class="brief-section"><div class="brief-label">SIGNALS</div><ul class="brief-list">';b.signals.forEach(function(s){h+='<li>'+esc(s)+'</li>'});h+='</ul></div>'}
+  if(b.behavioralPatterns&&b.behavioralPatterns.length){h+='<div class="brief-section"><div class="brief-label">BEHAVIORAL PATTERNS</div>';
+    b.behavioralPatterns.forEach(function(bp){var tier=bp.confidence==="HIGH"?"stated":bp.confidence==="MED"?"inferred":"pattern";
+      h+='<div class="signal-card"><div class="signal-label"><span class="signal-tier '+tier+'">'+esc(bp.confidence)+'</span>'+esc(bp.signal)+'</div><div class="signal-value">'+esc(bp.observation)+'</div><div class="signal-evidence">'+bp.evidenceCount+' observations &middot; '+esc(bp.caveat)+'</div></div>'});
+    h+='</div>'}
+  if(b.suggestedFollowUps&&b.suggestedFollowUps.length){h+='<div class="brief-section"><div class="brief-label">SUGGESTED FOLLOW-UPS</div><ul class="brief-list">';b.suggestedFollowUps.forEach(function(f){h+='<li class="action">'+esc(f)+'</li>'});h+='</ul></div>'}
+  if(b.nextSteps&&b.nextSteps.length){h+='<div class="brief-section"><div class="brief-label">NEXT STEPS</div><ul class="brief-list">';b.nextSteps.forEach(function(n){h+='<li class="action">'+esc(n)+'</li>'});h+='</ul></div>'}
+  briefBody.innerHTML=h;
+  var rb=document.getElementById("brief-refresh-btn");if(rb)rb.addEventListener("click",function(){firePersona("BRIEF",null,null,briefPid)});
+}
+
+/* ── EDIT SHEET ── */
+var editBg=document.getElementById("edit-bg");
+editBg.addEventListener("click",function(e){if(e.target===editBg)editBg.classList.remove("show")});
+document.getElementById("edit-save").addEventListener("click",function(){
+  if(!editPid)return;
+  var nm=document.getElementById("edit-name").value.trim();
+  var al=document.getElementById("edit-aliases").value;
+  var aliases=al?al.split(",").map(function(a){return a.trim()}).filter(function(a){return a}):[];
+  var notes=document.getElementById("edit-notes").value;
+  firePersona("UPDATE",null,null,editPid,{name:nm,aliases:aliases,notes:notes});
+  editBg.classList.remove("show");
+});
+document.getElementById("pd-edit").addEventListener("click",function(){
+  if(!pdPid)return;var S=window.validateAIState;if(!S)return;
+  var p=(S.personas||[]).find(function(x){return x.id===pdPid});if(!p)return;
+  editPid=pdPid;
+  document.getElementById("edit-name").value=p.name;
+  document.getElementById("edit-aliases").value=(p.aliases||[]).join(", ");
+  document.getElementById("edit-notes").value=p.notes||"";
+  editBg.classList.add("show");
+});
+
+/* ── PERSONA UPDATE BANNER ── */
+document.getElementById("persona-update-banner").addEventListener("click",function(){
+  var S=window.validateAIState;if(!S)return;
+  var updates=S.personaUpdates||[];
+  if(updates.length){
+    navBtns.forEach(function(x){x.classList.remove("active")});pages.forEach(function(pg){pg.classList.remove("active")});
+    document.querySelector('[data-pg="personas"]').classList.add("active");document.getElementById("pg-personas").classList.add("active");
+    titleEl.textContent="PERSONAS";openPersonaDetail(updates[0].personaId);
+  }
+  firePersona("DISMISS_UPDATES");
+});
+
 /* ── DETAIL SHEET ── */
 var detBg=document.getElementById("detail-bg"),detBody=document.getElementById("detail-body");
 detBg.addEventListener("click",function(e){if(e.target===detBg)detBg.classList.remove("show")});
@@ -686,6 +839,15 @@ function rNow(S){
       personaBannerTimer=setTimeout(function(){firePersona("SKIP");banner.classList.remove("show");lastPendingName=null},30000)}
   }else{banner.classList.remove("show");lastPendingName=null;
     if(personaBannerTimer){clearTimeout(personaBannerTimer);personaBannerTimer=null}}
+
+  /* Persona update notifications */
+  var puBanner=document.getElementById("persona-update-banner");
+  var puUpdates=S.personaUpdates||[];
+  if(puUpdates.length){
+    document.getElementById("pu-text").textContent="Persona Updated: "+puUpdates.map(function(u){return u.name}).join(", ");
+    document.getElementById("pu-sub").textContent=puUpdates.map(function(u){return u.name+": "+u.changes}).join(" | ");
+    puBanner.classList.add("show");
+  }else{puBanner.classList.remove("show")}
 }
 
 /* ── RENDER: SESSION FAB ── */
@@ -1129,11 +1291,16 @@ function rPersonas(S){
     h+='<div class="persona-name">'+esc(p.name)+'</div>';
     h+='<div class="persona-meta">Last seen: '+esc(lastSeen)+'</div>';
     h+='<div class="persona-sessions">'+sessCount+' session'+(sessCount!==1?"s":"")+'</div>';
+    h+='<div class="persona-card-actions"><button class="persona-brief-btn" data-bpid="'+esc(p.id)+'">BRIEF</button></div>';
     h+='</div>';
   });
   pL.innerHTML=h;
-  pL.querySelectorAll(".persona-card").forEach(function(el){el.addEventListener("click",function(){
+  pL.querySelectorAll(".persona-card").forEach(function(el){el.addEventListener("click",function(e){
+    if(e.target.classList.contains("persona-brief-btn"))return;
     openPersonaDetail(el.dataset.pid);
+  })});
+  pL.querySelectorAll(".persona-brief-btn").forEach(function(el){el.addEventListener("click",function(e){
+    e.stopPropagation();openBrief(el.dataset.bpid);
   })});
 }
 
@@ -1156,7 +1323,7 @@ function renderPD(){
   document.getElementById("pd-dates").textContent="First: "+created+" \u00b7 Last: "+lastSeen+" \u00b7 "+sessCount+" session"+(sessCount!==1?"s":"");
 
   var TABS=[{id:"overview",l:"OVERVIEW"},{id:"commitments",l:"COMMITMENTS"},{id:"decisions",l:"DECISIONS"},
-    {id:"entities",l:"ENTITIES"},{id:"sessions",l:"SESSIONS"},{id:"signals",l:"SIGNALS"}];
+    {id:"entities",l:"ENTITIES"},{id:"sessions",l:"SESSIONS"},{id:"signals",l:"SIGNALS"},{id:"delta",l:"DELTA"}];
   var th="";TABS.forEach(function(t){th+='<button class="pd-tab'+(t.id===pdTab?" active":"")+'" data-t="'+t.id+'">'+t.l+'</button>'});
   document.getElementById("pd-tabs").innerHTML=th;
   document.getElementById("pd-tabs").querySelectorAll(".pd-tab").forEach(function(t){t.addEventListener("click",function(){pdTab=t.dataset.t;renderPD()})});
@@ -1175,15 +1342,20 @@ function renderPD(){
   var relevantCommits=allCommits.filter(function(c){return(c.text||"").toLowerCase().indexOf(nameL)!==-1||(c.owner||"").toLowerCase().indexOf(nameL)!==-1});
   var relevantDecisions=allDecisions.filter(function(d){return((d.text||d)||"").toLowerCase().indexOf(nameL)!==-1});
   var relevantEntities=allEntities.filter(function(e){return(e.text||"").toLowerCase().indexOf(nameL)!==-1||(e.context||"").toLowerCase().indexOf(nameL)!==-1});
+  var cStatuses=S.commitmentStatuses||{};
 
   var ch="";
   if(pdTab==="overview"){
+    var doneCount=0,pendCount=0;
+    relevantCommits.forEach(function(c){if(cStatuses[c.text])doneCount++;else pendCount++});
+    var total=doneCount+pendCount,ftRate=total>0?Math.round(doneCount/total*100):0;
     ch='<div class="pd-overview">';
-    if(p.notes){ch+=esc(p.notes)}
-    else{ch+='Person detected across '+sessCount+' session'+(sessCount!==1?"s":"")+'. '
-      +relevantCommits.length+' commitment'+(relevantCommits.length!==1?"s":"")+', '
-      +relevantDecisions.length+' decision'+(relevantDecisions.length!==1?"s":"")+', '
-      +relevantEntities.length+' related entit'+(relevantEntities.length!==1?"ies":"y")+'.'}
+    if(p.notes){ch+=esc(p.notes)+'<br><br>'}
+    ch+='Person detected across '+sessCount+' session'+(sessCount!==1?"s":"")+'. ';
+    if(total>0){ch+=doneCount+' of '+total+' commitments completed ('+ftRate+'%). '}
+    else{ch+=relevantCommits.length+' commitment'+(relevantCommits.length!==1?"s":"")+'. '}
+    ch+=relevantDecisions.length+' decision'+(relevantDecisions.length!==1?"s":"")+', '
+      +relevantEntities.length+' related entit'+(relevantEntities.length!==1?"ies":"y")+'.';
     ch+='</div>';
     ch+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">';
     ch+='<span class="pd-stat"><span class="b b-commit">'+relevantCommits.length+'</span> commitments</span>';
@@ -1191,14 +1363,21 @@ function renderPD(){
     ch+='<span class="pd-stat"><span class="b b-entity">'+relevantEntities.length+'</span> entities</span>';
     ch+='<span class="pd-stat"><span class="b b-person">'+sessCount+'</span> sessions</span>';
     ch+='</div>';
-    if(p.aliases&&p.aliases.length){ch+='<div style="font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-top:8px">Also known as: '+p.aliases.map(function(a){return esc(a)}).join(", ")+'</div>'}
+    if(p.aliases&&p.aliases.length){ch+='<div style="font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-bottom:12px">Also known as: '+p.aliases.map(function(a){return esc(a)}).join(", ")+'</div>'}
+    if(p.brief&&p.brief.nextSteps&&p.brief.nextSteps.length){
+      ch+='<div class="sh"><span class="sh-t">Next Steps</span><span class="sh-line"></span></div>';
+      p.brief.nextSteps.forEach(function(ns){ch+='<div class="delta-item"><span class="delta-icon delta-new">&rarr;</span><span>'+esc(ns)+'</span></div>'});
+    }
   }
   else if(pdTab==="commitments"){
     if(!relevantCommits.length){ch='<div class="empty">No commitments linked to this persona</div>'}
     else{relevantCommits.forEach(function(c){
+      var isDone=!!cStatuses[c.text],isOverdue=false;
+      if(!isDone&&c.dueDate){var dd=new Date(c.dueDate);if(!isNaN(dd.getTime())&&dd.getTime()<Date.now())isOverdue=true}
+      var stCls=isDone?"done":isOverdue?"overdue":"pending",stTxt=isDone?"DONE":isOverdue?"OVERDUE":"PENDING";
       var meta=[];if(c.owner)meta.push(esc(c.owner));if(c.dueDate)meta.push("by "+esc(c.dueDate));if(c.ts)meta.push(rel(c.ts));
-      ch+='<div class="sd-item"><span class="b b-commit">COMMIT</span><div class="sd-item-body"><div class="sd-item-text">'+esc(c.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(" &middot; ")+'</div>':'')+'</div></div>';
-    })}
+      ch+='<div class="sd-item" style="align-items:center"><div class="sd-item-body" style="flex:1"><div class="sd-item-text">'+esc(c.text)+'</div>'+(meta.length?'<div class="sd-item-meta">'+meta.join(" &middot; ")+'</div>':'')+'</div><button class="commit-toggle '+stCls+'" data-ct="'+esc(c.text)+'" data-done="'+(isDone?"1":"0")+'">'+stTxt+'</button></div>';
+    });ch+='<div style="font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);padding:8px 0">Tap badge to toggle status</div>'}
   }
   else if(pdTab==="decisions"){
     if(!relevantDecisions.length){ch='<div class="empty">No decisions linked to this persona</div>'}
@@ -1216,25 +1395,119 @@ function renderPD(){
   else if(pdTab==="sessions"){
     if(!allSessions.length){ch='<div class="empty">No sessions linked to this persona</div>'}
     else{allSessions.forEach(function(s){
-      var isActive=s.status==="active";
-      var dStr=isActive?"ongoing":"";
+      var isActive=s.status==="active",dStr=isActive?"ongoing":"";
       if(!isActive&&s.startedAt&&s.endedAt){dStr=Math.round((new Date(s.endedAt).getTime()-new Date(s.startedAt).getTime())/60000)+" min"}
       ch+='<div class="sess-card'+(isActive?" sess-active":"")+'">';
       ch+='<div class="sess-label">'+esc(s.label)+'</div>';
       if(dStr)ch+='<div class="sess-dur">'+esc(dStr)+'</div>';
-      ch+='<span class="sess-status '+(isActive?"active":"completed")+'">'+(isActive?"\u25cf ACTIVE":"COMPLETED")+'</span>';
-      ch+='</div>';
+      ch+='<span class="sess-status '+(isActive?"active":"completed")+'">'+(isActive?"\u25cf ACTIVE":"COMPLETED")+'</span></div>';
     })}
   }
-  else if(pdTab==="signals"){
-    var signals=(S.recentOutputs||[]).filter(function(o){return o.triggered&&(o.summary||"").toLowerCase().indexOf(nameL)!==-1});
-    if(!signals.length){ch='<div class="empty">No signals linked to this persona</div>'}
-    else{signals.forEach(function(o){
-      var cls=MC[o.suggestedHudMode]||"passive",bc=CB[o.confidence]||"b-low";
-      ch+='<div class="fi '+cls+'"><div class="fi-content"><div class="fi-title">'+esc(o.title)+'</div><div class="fi-summary">'+esc(o.summary)+'</div><div class="fi-meta"><span class="b '+bc+'">'+esc(o.confidence)+'</span><span>'+esc(o.analyzer)+'</span></div></div></div>';
-    })}
-  }
+  else if(pdTab==="signals"){ch=renderSignals(p,allSessions,relevantCommits,cStatuses)}
+  else if(pdTab==="delta"){ch=renderDelta(p,allSessions,S,nameL,cStatuses)}
   document.getElementById("pd-content").innerHTML=ch;
+  document.querySelectorAll(".commit-toggle").forEach(function(el){
+    el.addEventListener("click",function(){var txt=el.dataset.ct,wasDone=el.dataset.done==="1";firePersona("TOGGLE_COMMITMENT",null,null,null,null,txt,!wasDone)});
+  });
+}
+
+function renderSignals(p,allSessions,relevantCommits,cStatuses){
+  var ch='<div class="signal-disclaimer">Signals are observations from conversation patterns, not assessments of character or intent. All findings are probabilistic, not definitive.</div>';
+  var snaps=p.signalSnapshots||[],sessCount=allSessions.length;
+  if(sessCount<2){return ch+'<div class="empty">Signals require 2+ sessions. Currently tracking '+sessCount+' session'+(sessCount!==1?"s":"")+'.</div>'}
+  var hasSignal=false;
+
+  /* A. CONSISTENCY SCORE */
+  var totalC=0;snaps.forEach(function(s){totalC+=s.contradictions||0});
+  var con=totalC===0?"HIGH":totalC<=2?"MEDIUM":"LOW",conCls=con==="HIGH"?"b-high":con==="MEDIUM"?"b-med":"b-low";
+  ch+='<div class="signal-card"><div class="signal-label"><span class="signal-tier inferred">INFERRED</span>Consistency Score</div>';
+  ch+='<div class="signal-value"><span class="b '+conCls+'">'+con+'</span> consistency</div>';
+  ch+='<div class="signal-evidence">Based on '+sessCount+' sessions, '+totalC+' contradiction'+(totalC!==1?"s":"")+' detected</div></div>';hasSignal=true;
+
+  /* B. HEDGING PATTERN */
+  var allH=[];snaps.forEach(function(s){if(s.hedgingScores)allH=allH.concat(s.hedgingScores)});
+  if(allH.length>=2){var avgH=allH.reduce(function(a,b){return a+b},0)/allH.length;var hLvl=avgH<3?"below average":avgH<6?"average":"above average";
+    ch+='<div class="signal-card"><div class="signal-label"><span class="signal-tier pattern">PATTERN</span>Hedging Pattern</div>';
+    ch+='<div class="signal-value">Hedging level: '+hLvl+'</div>';
+    if(avgH>=6)ch+='<div class="signal-value" style="margin-top:4px">Pattern noted: frequent use of uncertain language across '+snaps.length+' sessions</div>';
+    ch+='<div class="signal-evidence">Based on '+allH.length+' observations across '+snaps.length+' sessions (avg: '+avgH.toFixed(1)+')</div></div>';hasSignal=true}
+
+  /* C. COMMITMENT RELIABILITY */
+  if(relevantCommits.length>=3){var dn=0,pd=0,od=0;
+    relevantCommits.forEach(function(c){if(cStatuses[c.text])dn++;else{pd++;if(c.dueDate){var d=new Date(c.dueDate);if(!isNaN(d.getTime())&&d.getTime()<Date.now())od++}}});
+    var rt=Math.round(dn/(dn+pd)*100);
+    ch+='<div class="signal-card"><div class="signal-label"><span class="signal-tier stated">STATED</span>Commitment Reliability</div>';
+    ch+='<div class="signal-value">Follow-through rate: '+rt+'% ('+dn+' of '+(dn+pd)+')</div>';
+    if(od>0)ch+='<div class="signal-value" style="color:var(--danger);margin-top:4px">'+od+' overdue commitment'+(od>1?"s":"")+'</div>';
+    ch+='<div class="signal-evidence">Based on '+(dn+pd)+' commitments tracked</div></div>';hasSignal=true}
+
+  /* D. TOPIC SENSITIVITY */
+  var totalTS=0;snaps.forEach(function(s){totalTS+=s.topicShifts||0});
+  if(totalTS>=2&&snaps.length>=2){
+    ch+='<div class="signal-card"><div class="signal-label"><span class="signal-tier pattern">PATTERN</span>Topic Sensitivity</div>';
+    ch+='<div class="signal-value">Pattern noted: topic shifts observed '+totalTS+' times across '+snaps.length+' sessions</div>';
+    ch+='<div class="signal-evidence">(low confidence, '+totalTS+' observations)</div></div>';hasSignal=true}
+
+  /* E. COMMUNICATION STYLE */
+  var ci={};snaps.forEach(function(s){if(s.intentCounts){Object.keys(s.intentCounts).forEach(function(k){ci[k]=(ci[k]||0)+s.intentCounts[k]})}});
+  var ik=Object.keys(ci);
+  if(ik.length>0&&snaps.length>=2){var tI=0;ik.forEach(function(k){tI+=ci[k]});
+    var dom="",mx=0;ik.forEach(function(k){if(ci[k]>mx){mx=ci[k];dom=k}});
+    var sm={informative:"Primarily informative",persuasive:"Frequently persuasive",speculative:"Often speculative",deflective:"Often deflective",escalating:"Tends to escalate"};
+    ch+='<div class="signal-card"><div class="signal-label"><span class="signal-tier inferred">INFERRED</span>Communication Style</div>';
+    ch+='<div class="signal-value">'+esc(sm[dom]||"Primarily "+dom)+'</div>';
+    ch+='<div class="signal-bar">';
+    var clrs={informative:"var(--accent)",persuasive:"var(--warn)",speculative:"var(--blue)",deflective:"var(--orange)",escalating:"var(--danger)"};
+    ik.forEach(function(k){var pct=Math.round(ci[k]/tI*100);ch+='<div class="signal-bar-seg" style="width:'+pct+'%;background:'+(clrs[k]||"var(--dim)")+'" title="'+esc(k)+': '+pct+'%"></div>'});
+    ch+='</div><div class="signal-evidence">Observed communication patterns across '+snaps.length+' sessions ('+tI+' classifications)</div></div>';hasSignal=true}
+
+  if(!hasSignal)ch+='<div class="empty">Insufficient behavioral data. Signals will appear as more sessions are recorded.</div>';
+  return ch;
+}
+
+function renderDelta(p,allSessions,S,nameL,cStatuses){
+  if(allSessions.length<2)return'<div class="empty">Delta requires 2+ sessions with this persona.</div>';
+  var curr=allSessions[0],prev=allSessions[1];
+  var ch='<div style="font:400 var(--fs-xs)/1 var(--mono);color:var(--dim);margin-bottom:var(--gap)">Comparing: '+esc(curr.label)+' vs '+esc(prev.label)+'</div>';
+
+  var currC=(S.commitments||[]).filter(function(c){return c.sessionId===curr.id&&((c.text||"").toLowerCase().indexOf(nameL)!==-1||(c.owner||"").toLowerCase().indexOf(nameL)!==-1)});
+  var prevC=(S.commitments||[]).filter(function(c){return c.sessionId===prev.id&&((c.text||"").toLowerCase().indexOf(nameL)!==-1||(c.owner||"").toLowerCase().indexOf(nameL)!==-1)});
+  var currE=(S.entities||[]).filter(function(e){return e.sessionId===curr.id});
+  var prevE=(S.entities||[]).filter(function(e){return e.sessionId===prev.id});
+
+  var newC=currC.filter(function(c){return!prevC.some(function(pc){return pc.text===c.text})});
+  if(newC.length){ch+='<div class="delta-section"><div class="delta-label">NEW COMMITMENTS</div>';
+    newC.forEach(function(c){ch+='<div class="delta-item"><span class="delta-icon delta-new">+</span><span>'+esc(c.text)+(c.dueDate?' <span style="color:var(--orange)">by '+esc(c.dueDate)+'</span>':'')+'</span></div>'});
+    ch+='</div>'}
+
+  if(prevC.length){var res=prevC.filter(function(c){return cStatuses[c.text]});var unr=prevC.filter(function(c){return!cStatuses[c.text]});
+    ch+='<div class="delta-section"><div class="delta-label">PRIOR COMMITMENTS STATUS</div>';
+    res.forEach(function(c){ch+='<div class="delta-item"><span class="delta-icon delta-resolved">&check;</span><span style="color:var(--accent)">'+esc(c.text)+'</span></div>'});
+    unr.forEach(function(c){ch+='<div class="delta-item"><span class="delta-icon delta-unresolved">&bull;</span><span style="color:var(--warn)">'+esc(c.text)+'</span></div>'});
+    ch+='</div>'}
+
+  var cT=new Set(),pT=new Set();currE.forEach(function(e){cT.add(e.text.toLowerCase())});prevE.forEach(function(e){pT.add(e.text.toLowerCase())});
+  var nT=[];cT.forEach(function(t){if(!pT.has(t))nT.push(t)});var sT=[];cT.forEach(function(t){if(pT.has(t))sT.push(t)});
+  if(nT.length){ch+='<div class="delta-section"><div class="delta-label">NEW TOPICS</div>';
+    nT.forEach(function(t){ch+='<div class="delta-item"><span class="delta-icon delta-new">+</span><span>'+esc(t)+'</span></div>'});ch+='</div>'}
+
+  if(sT.length){var snp=p.signalSnapshots||[];var cSnp=snp.find(function(s){return s.sessionId===curr.id});var cCon=cSnp?cSnp.contradictions:0;
+    ch+='<div class="delta-section"><div class="delta-label">CONSISTENCY NOTE</div>';
+    if(cCon>0){ch+='<div class="delta-item"><span class="delta-icon delta-changed">!</span><span>'+cCon+' contradiction'+(cCon>1?"s":"")+' in latest session on shared topics</span></div>'}
+    else{ch+='<div class="delta-item"><span class="delta-icon delta-resolved">&check;</span><span>No contradictions detected on '+sT.length+' shared topic'+(sT.length>1?"s":"")+'</span></div>'}
+    ch+='</div>'}
+
+  var cs=curr.stats||{},ps=prev.stats||{};
+  ch+='<div class="delta-section"><div class="delta-label">SESSION COMPARISON</div>';
+  ch+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  ch+='<div class="card" style="margin:0"><div style="font:700 10px/1 var(--mono);color:var(--dim);margin-bottom:8px">LATEST</div>';
+  ch+='<div style="font:400 var(--fs-xs)/1.5 var(--mono);color:var(--muted)">'+(cs.factsChecked||0)+' facts<br>'+(cs.commitmentsStored||0)+' commits<br>'+(cs.decisionsStored||0)+' decisions<br>'+(cs.contradictionsDetected||0)+' conflicts</div></div>';
+  ch+='<div class="card" style="margin:0"><div style="font:700 10px/1 var(--mono);color:var(--dim);margin-bottom:8px">PREVIOUS</div>';
+  ch+='<div style="font:400 var(--fs-xs)/1.5 var(--mono);color:var(--muted)">'+(ps.factsChecked||0)+' facts<br>'+(ps.commitmentsStored||0)+' commits<br>'+(ps.decisionsStored||0)+' decisions<br>'+(ps.contradictionsDetected||0)+' conflicts</div></div>';
+  ch+='</div></div>';
+
+  if(!newC.length&&!prevC.length&&!nT.length)ch+='<div class="empty" style="padding:20px 0">No significant changes between sessions.</div>';
+  return ch;
 }
 
 /* ── RENDER: CONTROL ── */
@@ -1274,6 +1547,7 @@ setInterval(function(){
   if(S.version===lastVer)return;
   lastVer=S.version||0;
   countFired(S);rSessFab(S);rNow(S);rLib(S);rPersonas(S);rCtrl(S);
+  if(briefBg.classList.contains("show")&&briefPid){var bp=(S.personas||[]).find(function(x){return x.id===briefPid});if(bp)renderBriefBody(bp)}
 },250);
 
 })();

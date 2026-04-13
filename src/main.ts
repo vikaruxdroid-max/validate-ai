@@ -16,7 +16,8 @@ import {
   TopicShiftAnalyzer,
   StressCuesAnalyzer,
 } from "./analyzers";
-import type { HudPayload, Verdict } from "./models/types";
+import type { HudPayload, Verdict, PersonaBrief, PersonaSignalSnapshot } from "./models/types";
+import { claudeRequest } from "./services/claude";
 
 // ── Config ──────────────────────────────────────────────────────────
 const DISPLAY_W = 576;
@@ -331,6 +332,87 @@ async function main(): Promise<void> {
     }
   });
 
+  // ── Persona brief + post-session helpers ──────────────────────────
+  let briefLoadingPid: string | null = null;
+  let personaUpdates: Array<{ personaId: string; name: string; changes: string }> = [];
+
+  async function generatePersonaBrief(personaId: string): Promise<void> {
+    const store = orchestrator.getMemoryStore();
+    const persona = store.getPersonaById(personaId);
+    if (!persona) return;
+    const sessions = store.getSessions();
+    const commitments = store.getCommitments();
+    const statuses = store.getCommitmentStatuses();
+    const entities = store.getEntities();
+    const sids = persona.sessionIds || [];
+    const linkedSessions = sessions.filter(s => sids.includes(s.id));
+    const linkedCommits = commitments.filter(c => c.sessionId && sids.includes(c.sessionId));
+    const linkedEntities = entities.filter(e => e.sessionId && sids.includes(e.sessionId));
+    const nameL = persona.name.toLowerCase();
+    const relevantCommits = linkedCommits.filter(c =>
+      (c.text || "").toLowerCase().includes(nameL) || (c.owner || "").toLowerCase().includes(nameL));
+    const openCommits = relevantCommits.filter(c => !statuses[c.text]);
+    const lastSession = linkedSessions[0]; // sorted newest first
+
+    const artifactPayload = JSON.stringify({
+      persona: { name: persona.name, aliases: persona.aliases, notes: persona.notes, sessionCount: sids.length },
+      sessions: linkedSessions.map(s => ({ label: s.label, startedAt: s.startedAt, endedAt: s.endedAt, stats: s.stats })),
+      commitments: relevantCommits.map(c => ({ text: c.text, owner: c.owner, dueDate: c.dueDate, done: !!statuses[c.text] })),
+      entities: linkedEntities.slice(0, 30).map(e => ({ text: e.text, type: e.type, context: e.context })),
+      signalSnapshots: persona.signalSnapshots || [],
+    });
+
+    const system = `You analyze conversation artifacts about a person and generate a structured pre-conversation brief. Focus on actionable insights. Be concise. Frame all observations as patterns, never character assessments. Return ONLY valid JSON with fields: who (string), lastInteraction (string), openCommitments (string[]), openQuestions (string[]), signals (string[]), behavioralPatterns (array of {signal, observation, confidence, evidenceCount, caveat}), suggestedFollowUps (string[]), nextSteps (string[]).`;
+    try {
+      const raw = await claudeRequest("claude-sonnet-4-20250514", system,
+        `Person: ${persona.name}\nArtifacts:\n${artifactPayload}`, undefined, 1024);
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) {
+        const brief: PersonaBrief = { ...JSON.parse(match[0]), generatedAt: Date.now() };
+        store.setPersonaBrief(personaId, brief);
+        console.log("[Brief] generated for:", persona.name);
+      }
+    } catch (err) { console.warn("[Brief] generation failed:", err); }
+  }
+
+  function computePostSessionUpdates(endedSessionId: string): void {
+    const store = orchestrator.getMemoryStore();
+    const personas = store.getPersonas();
+    const commitments = store.getCommitments();
+    const outputs = orchestrator.getRecentOutputs();
+
+    for (const p of personas) {
+      if (!p.sessionIds.includes(endedSessionId)) continue;
+      // Build signal snapshot
+      const sessionCommits = commitments.filter(c => c.sessionId === endedSessionId);
+      const nameL = p.name.toLowerCase();
+      const relCommits = sessionCommits.filter(c =>
+        (c.text || "").toLowerCase().includes(nameL) || (c.owner || "").toLowerCase().includes(nameL));
+      const hedgingScores = outputs.filter(o => o.analyzer === "hedging" && o.triggered && o.details?.score != null)
+        .map(o => Number(o.details!.score));
+      const intentCounts: Record<string, number> = {};
+      outputs.filter(o => o.analyzer === "intent" && o.triggered && o.details?.intent)
+        .forEach(o => { const k = String(o.details!.intent); intentCounts[k] = (intentCounts[k] || 0) + 1; });
+      const topicShifts = outputs.filter(o => o.analyzer === "topicShift" && o.triggered).length;
+      const contradictions = outputs.filter(o => o.analyzer === "contradiction" && o.triggered).length;
+
+      const snapshot: PersonaSignalSnapshot = {
+        sessionId: endedSessionId, ts: Date.now(), contradictions, hedgingScores, intentCounts, topicShifts,
+        commitmentsMade: relCommits.length,
+      };
+      store.addPersonaSignalSnapshot(p.id, snapshot);
+
+      // Build change summary
+      const changes: string[] = [];
+      if (relCommits.length) changes.push(`${relCommits.length} new commitment${relCommits.length > 1 ? "s" : ""}`);
+      if (contradictions) changes.push(`${contradictions} contradiction${contradictions > 1 ? "s" : ""} detected`);
+      if (topicShifts) changes.push(`${topicShifts} topic shift${topicShifts > 1 ? "s" : ""}`);
+      if (changes.length) {
+        personaUpdates.push({ personaId: p.id, name: p.name, changes: changes.join(", ") });
+      }
+    }
+  }
+
   // ── Phone companion UI state bridge ──────────────────────────────
   let stateVersion = 0;
   function updatePhoneState(): void {
@@ -361,6 +443,9 @@ async function main(): Promise<void> {
       analyzerBadge: orchestrator.getAnalyzerBadge(),
       personas: store.getPersonas(),
       pendingPersonaDetection: orchestrator.getPendingPersonaDetection(),
+      commitmentStatuses: store.getCommitmentStatuses(),
+      briefLoadingPid,
+      personaUpdates,
     };
   }
   updatePhoneState();
@@ -398,8 +483,10 @@ async function main(): Promise<void> {
       const id = store.startSession();
       console.log("[PhoneUI] session started:", id);
     } else if (action === "END") {
+      const activeId = store.getCurrentSessionId();
       const stats = orchestrator.getStats();
       store.endSession(stats.factsChecked, stats.contradictions);
+      if (activeId) computePostSessionUpdates(activeId);
       store.save();
       console.log("[PhoneUI] session ended and saved");
     }
@@ -408,7 +495,7 @@ async function main(): Promise<void> {
 
   // Listen for persona events from phone UI
   window.addEventListener("validateai-persona", ((e: CustomEvent) => {
-    const { action, name, sessionId } = e.detail || {};
+    const { action, name, sessionId, personaId, updates } = e.detail || {};
     const store = orchestrator.getMemoryStore();
     if (action === "CREATE") {
       const persona = store.createPersona(name, sessionId);
@@ -418,6 +505,21 @@ async function main(): Promise<void> {
     } else if (action === "SKIP") {
       orchestrator.clearPendingPersonaDetection();
       console.log("[PhoneUI] persona detection skipped");
+    } else if (action === "BRIEF") {
+      briefLoadingPid = personaId;
+      updatePhoneState();
+      generatePersonaBrief(personaId).finally(() => { briefLoadingPid = null; updatePhoneState(); });
+      return; // avoid double updatePhoneState
+    } else if (action === "UPDATE") {
+      if (personaId && updates) store.updatePersona(personaId, updates);
+      store.save();
+      console.log("[PhoneUI] persona updated:", personaId);
+    } else if (action === "TOGGLE_COMMITMENT") {
+      const { commitmentText, done } = e.detail;
+      store.setCommitmentStatus(commitmentText, done);
+      store.save();
+    } else if (action === "DISMISS_UPDATES") {
+      personaUpdates = [];
     }
     updatePhoneState();
   }) as EventListener);
