@@ -2,7 +2,7 @@ import "dotenv/config";
 import { readFileSync, statSync } from "fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "https";
 import { WebSocketServer, WebSocket } from "ws";
-import { initDatabase, importJSON, exportJSON, clearAll } from "./services/database";
+import { initDatabase, importJSON, exportJSON, clearAll, computePersonaPatternScores } from "./services/database";
 
 const DG_KEY = process.env.VITE_DEEPGRAM_API_KEY;
 const PORT = 3001;
@@ -88,6 +88,53 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
       res.end(errBody(err.message, "DELETE_FAILED"));
     }
     return;
+  }
+
+  // ── Persona API endpoints ────────────────────────────────────────
+  const personaMatch = req.url?.match(/^\/api\/persona\/([^/]+)\/(pattern-scores|analysis)$/);
+  if (personaMatch) {
+    const pid = decodeURIComponent(personaMatch[1]);
+    const action = personaMatch[2];
+
+    if (action === "pattern-scores" && req.method === "GET") {
+      try {
+        const scores = computePersonaPatternScores(db, pid);
+        if (!scores) { res.writeHead(404, { "Content-Type": "application/json" }); res.end(errBody("Persona not found", "NOT_FOUND")); return; }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(scores));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" }); res.end(errBody(err.message, "PATTERN_SCORE_ERROR"));
+      }
+      return;
+    }
+
+    if (action === "analysis" && req.method === "GET") {
+      try {
+        const p = db.prepare("SELECT analysis_json FROM personas WHERE id = ?").get(pid) as any;
+        if (!p) { res.writeHead(404, { "Content-Type": "application/json" }); res.end(errBody("Persona not found", "NOT_FOUND")); return; }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(p.analysis_json || "null");
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" }); res.end(errBody(err.message, "ANALYSIS_READ_ERROR"));
+      }
+      return;
+    }
+
+    if (action === "analysis" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => (body += chunk.toString()));
+      req.on("end", () => {
+        try {
+          const analysisData = JSON.parse(body);
+          db.prepare("UPDATE personas SET analysis_json = ? WHERE id = ?").run(JSON.stringify(analysisData), pid);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end('{"ok":true}');
+        } catch (err: any) {
+          res.writeHead(500, { "Content-Type": "application/json" }); res.end(errBody(err.message, "ANALYSIS_WRITE_ERROR"));
+        }
+      });
+      return;
+    }
   }
 
   // ── Dev endpoints (guarded) ──────────────────────────────────────

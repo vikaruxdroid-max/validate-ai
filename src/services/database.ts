@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { existsSync, readFileSync, renameSync } from "fs";
 import { dirname, join } from "path";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 // ── Schema ──────────────────────────────────────────────────────────
 
@@ -198,6 +198,7 @@ function setSchemaVersion(db: Database.Database, v: number): void {
 function runMigrations(db: Database.Database, fromVersion: number): void {
   if (fromVersion < 2) migrateV1toV2(db);
   if (fromVersion < 3) migrateV2toV3(db);
+  if (fromVersion < 4) migrateV3toV4(db);
 }
 
 function migrateV1toV2(db: Database.Database): void {
@@ -226,6 +227,176 @@ function migrateV2toV3(db: Database.Database): void {
   console.log("[db] Running migration v2 → v3: ensure is_self column on personas");
   try { db.exec("ALTER TABLE personas ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
   console.log("[db] Migration v2 → v3 complete");
+}
+
+function migrateV3toV4(db: Database.Database): void {
+  console.log("[db] Running migration v3 → v4: add analysis_json column");
+  try { db.exec("ALTER TABLE personas ADD COLUMN analysis_json TEXT"); } catch { /* already exists */ }
+  console.log("[db] Migration v3 → v4 complete");
+}
+
+// ── Pattern Scoring ─────────────────────────────────────────────────
+
+export function computePersonaPatternScores(db: Database.Database, personaId: string): any {
+  const persona = db.prepare("SELECT * FROM personas WHERE id = ?").get(personaId) as any;
+  if (!persona) return null;
+
+  // Gather all artifacts for this persona
+  const commitments = db.prepare("SELECT * FROM commitments WHERE persona_id = ?").all(personaId) as any[];
+  const decisions = db.prepare("SELECT * FROM decisions WHERE persona_id = ?").all(personaId) as any[];
+  const entities = db.prepare("SELECT * FROM entities WHERE persona_id = ?").all(personaId) as any[];
+  const contradictions = db.prepare("SELECT * FROM contradictions WHERE persona_id = ?").all(personaId) as any[];
+
+  // Session info
+  const sessionIds = db.prepare(`
+    SELECT DISTINCT session_id FROM (
+      SELECT session_id FROM commitments WHERE persona_id = ? AND session_id IS NOT NULL
+      UNION SELECT session_id FROM decisions WHERE persona_id = ? AND session_id IS NOT NULL
+      UNION SELECT session_id FROM entities WHERE persona_id = ? AND session_id IS NOT NULL
+      UNION SELECT session_id FROM contradictions WHERE persona_id = ? AND session_id IS NOT NULL
+    )
+  `).all(personaId, personaId, personaId, personaId) as any[];
+  const sids = sessionIds.map((r: any) => r.session_id);
+  const totalSessions = sids.length;
+
+  let sessions: any[] = [];
+  if (sids.length > 0) {
+    const placeholders = sids.map(() => "?").join(",");
+    sessions = db.prepare(`SELECT * FROM sessions WHERE id IN (${placeholders})`).all(...sids) as any[];
+  }
+
+  const totalArtifacts = commitments.length + decisions.length + entities.length + contradictions.length;
+
+  // Commitment reliability
+  let commitmentReliability = null;
+  if (commitments.length > 0) {
+    const doneCount = commitments.filter((c: any) => c.status === "done").length;
+    const overdueCount = commitments.filter((c: any) => c.status !== "done" && c.due_date_text && new Date(c.due_date_text).getTime() < Date.now()).length;
+    const pendingCount = commitments.filter((c: any) => c.status !== "done").length - overdueCount;
+    const undatedCount = commitments.filter((c: any) => !c.due_date_text).length;
+    const dated = commitments.filter((c: any) => c.due_date_text);
+    const datedDone = dated.filter((c: any) => c.status === "done").length;
+    const datedTotal = dated.length;
+    const denomQ = datedTotal >= 5 ? "strong" : datedTotal >= 2 ? "weak" : "insufficient";
+    commitmentReliability = {
+      rate: datedTotal >= 2 ? Math.round(datedDone / datedTotal * 100) / 100 : null,
+      doneCount, pendingCount, overdueCount, undatedCount,
+      denominatorQuality: denomQ,
+      denominatorNote: denomQ === "strong" ? "Based on " + datedTotal + " dated commitments" :
+        denomQ === "weak" ? "Only " + datedTotal + " dated commitments — rate may not be representative" :
+        "Fewer than 2 dated commitments — rate cannot be computed reliably",
+    };
+  }
+
+  // Claim accuracy — only from fact-related pinned items or contradictions with verdicts
+  // RULE: return null rate if fewer than 3 clearly persona-attributed facts
+  const claimAccuracy = { supportedCount: 0, disputedCount: 0, partialCount: 0, unresolvedCount: 0,
+    rate: null as number | null,
+    attributionNote: "Claim accuracy requires explicitly persona-attributed fact artifacts. Current schema does not store fact-check verdicts per-persona — this metric will populate when fact artifacts gain persona_id attribution." };
+
+  // Consistency
+  let consistency = null;
+  if (totalSessions >= 2) {
+    const contradictionCount = contradictions.length;
+    const contradictionDensity = totalSessions > 0 ? Math.round(contradictionCount / totalSessions * 100) / 100 : null;
+    const index = contradictionCount === 0 ? 1.0 : Math.max(0, 1.0 - (contradictionCount * 0.15));
+    consistency = {
+      index: Math.round(index * 100) / 100, contradictionCount, contradictionDensity,
+      repeatedTopicInconsistencies: 0,
+      attributionNote: contradictionCount > 0 ? "Based on " + contradictionCount + " contradictions across " + totalSessions + " sessions" : "No contradictions detected",
+    };
+  }
+
+  // Intent distribution from signal snapshots
+  const snaps = JSON.parse(persona.signal_snapshots_json || "[]") as any[];
+  let intentDistribution: Record<string, number> | null = null;
+  const topIntents: string[] = [];
+  const allIntents: Record<string, number> = {};
+  for (const s of snaps) {
+    if (s.intentCounts) for (const [k, v] of Object.entries(s.intentCounts)) allIntents[k] = (allIntents[k] || 0) + (v as number);
+  }
+  if (Object.keys(allIntents).length > 0) {
+    intentDistribution = allIntents;
+    const sorted = Object.entries(allIntents).sort((a, b) => b[1] - a[1]);
+    topIntents.push(...sorted.slice(0, 3).map(e => e[0]));
+  }
+
+  // Hedging
+  const allHedging: number[] = [];
+  for (const s of snaps) if (s.hedgingScores) allHedging.push(...s.hedgingScores);
+  const avgHedgingScore = allHedging.length >= 2 ? Math.round(allHedging.reduce((a: number, b: number) => a + b, 0) / allHedging.length * 100) / 100 : null;
+  let hedgingTrend = null;
+  if (allHedging.length >= 4) {
+    const mid = Math.floor(allHedging.length / 2);
+    const historical = allHedging.slice(0, mid);
+    const recent = allHedging.slice(mid);
+    const histAvg = historical.reduce((a, b) => a + b, 0) / historical.length;
+    const recAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const delta = recAvg - histAvg;
+    hedgingTrend = {
+      direction: (delta > 0.5 ? "increasing" : delta < -0.5 ? "decreasing" : "stable") as "increasing" | "decreasing" | "stable",
+      recentAvg: Math.round(recAvg * 100) / 100,
+      historicalAvg: Math.round(histAvg * 100) / 100,
+      dataPoints: allHedging.length,
+    };
+  }
+
+  // Evasion topic map — null for now (requires per-topic hedging correlation not available in current schema)
+  const evasionTopicMap = null;
+
+  // Activity trend
+  let recentVsHistoricalActivity = null;
+  if (sessions.length >= 4) {
+    const mid = Math.floor(sessions.length / 2);
+    const recentCount = mid;
+    const histCount = sessions.length - mid;
+    recentVsHistoricalActivity = recentCount > histCount ? "increasing" : recentCount < histCount ? "decreasing" : "stable";
+  }
+
+  // Identity confidence
+  const isSelf = persona.is_self === 1;
+  const identityConfidence = isSelf ? "HIGH" : totalSessions >= 5 ? "HIGH" : totalSessions >= 2 ? "MEDIUM" : "LOW";
+  const identityNote = isSelf ? "Self-identified persona" :
+    identityConfidence === "HIGH" ? "Consistent name match across " + totalSessions + " sessions" :
+    identityConfidence === "MEDIUM" ? totalSessions + " sessions with name match" :
+    "Single session — identity may be provisional";
+
+  // Session duration
+  let avgSessionDurationSec = null;
+  const durations = sessions.filter((s: any) => s.started_at && s.ended_at).map((s: any) => (new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000);
+  if (durations.length > 0) avgSessionDurationSec = Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length);
+
+  // Importance and tier stats
+  const allScores = [...commitments, ...decisions, ...entities].map((a: any) => a.importance_score ?? 0).filter((s: number) => s > 0);
+  const avgImportanceScore = allScores.length > 0 ? Math.round(allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length * 100) / 100 : null;
+  const statedCount = [...commitments, ...decisions, ...entities].filter((a: any) => a.source_tier === "STATED").length;
+  const inferredCount = [...commitments, ...decisions, ...entities].filter((a: any) => a.source_tier === "INFERRED").length;
+  const patternCount = [...commitments, ...decisions, ...entities].filter((a: any) => a.source_tier === "PATTERN").length;
+  const tierTotal = statedCount + inferredCount + patternCount;
+
+  const daysSinceLastSeen = persona.last_seen_at ? Math.floor((Date.now() - new Date(persona.last_seen_at).getTime()) / 86400000) : null;
+
+  // Recent session count (last 30 days)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+  const recentSessionCount = sessions.filter((s: any) => s.started_at >= thirtyDaysAgo).length;
+
+  return {
+    commitmentReliability, claimAccuracy, consistency,
+    intentDistribution, topIntents,
+    avgHedgingScore, hedgingTrend, evasionTopicMap,
+    recentSessionCount,
+    recentVsHistoricalActivity,
+    identityConfidence, identityNote,
+    totalSessions, totalArtifacts,
+    avgSessionDurationSec,
+    firstSeenAt: persona.created_at, lastSeenAt: persona.last_seen_at, daysSinceLastSeen,
+    avgImportanceScore, statedCount, inferredCount, patternCount,
+    statedRatio: tierTotal > 0 ? Math.round(statedCount / tierTotal * 100) / 100 : null,
+    hasEnoughForReliability: totalSessions >= 3 && commitments.filter((c: any) => c.due_date_text).length >= 3,
+    hasEnoughForPatterns: totalSessions >= 5,
+    hasEnoughForOutcomes: totalSessions >= 3 && totalArtifacts >= 10,
+    hasEnoughForInfluence: totalSessions >= 4 && Object.keys(allIntents).length > 0,
+  };
 }
 
 // ── JSON Migration ───────────────────────────────────────────────────

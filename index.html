@@ -403,6 +403,29 @@ ul{list-style:none}
 .sess-stat-row{display:flex;justify-content:space-between;padding:var(--s2) 0;font:400 var(--fs-sm)/1 var(--font-mono);color:var(--text-2);border-bottom:1px solid var(--border-1)}
 
 /* ═══ DEV TOOLS ═══ */
+/* ═══ ANALYSIS ═══ */
+.ana-card{background:var(--surface-1);border:1px solid var(--border-2);border-radius:var(--r-md);padding:var(--s4);margin-bottom:var(--s3)}
+.ana-card-accent{border-left:3px solid var(--accent)}
+.ana-card-title{font:600 var(--fs-md)/var(--lh-tight) var(--font-sans);color:var(--text-1);margin-bottom:var(--s2)}
+.ana-card-body{font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)}
+.ana-row{display:flex;align-items:flex-start;gap:var(--s3);padding:var(--s2) 0;border-bottom:1px solid var(--border-1);min-height:40px}
+.ana-row:last-child{border-bottom:none}
+.ana-row-label{font:400 var(--fs-sm)/1 var(--font-sans);color:var(--text-3);min-width:90px;flex-shrink:0;padding-top:2px}
+.ana-row-val{flex:1;font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-1)}
+.ana-scenario{padding:var(--s3);background:var(--surface-2);border-radius:var(--r-sm);margin-bottom:var(--s2)}
+.ana-scenario-if{font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2);font-style:italic}
+.ana-scenario-then{font:500 var(--fs-md)/var(--lh-base) var(--font-sans);color:var(--text-1);margin-top:var(--s1)}
+.ana-scenario-meta{display:flex;gap:var(--s2);margin-top:var(--s1);align-items:center}
+.ana-dq{background:var(--surface-2);border:1px solid var(--border-2);border-radius:var(--r-md);padding:var(--s4);margin-bottom:var(--s3)}
+.ana-dq-title{font:600 var(--fs-sm)/1 var(--font-sans);color:var(--text-1);margin-bottom:var(--s2)}
+.ana-dq-row{font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2);margin-bottom:var(--s1)}
+.ana-suppressed{font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--warn);padding:var(--s2) 0}
+.ana-progress{height:6px;background:var(--surface-3);border-radius:3px;overflow:hidden;margin-top:var(--s2)}
+.ana-progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
+.badge-recent{background:rgba(0,217,126,.15);color:var(--ok)}
+.badge-recurring{background:rgba(245,166,35,.15);color:var(--warn)}
+.badge-historical{background:var(--surface-3);color:var(--text-2)}
+
 .dev-btn{display:block;width:100%;min-height:var(--tap);font:500 var(--fs-sm)/1 var(--font-mono);border:1px solid var(--border-2);border-radius:var(--r-md);background:var(--surface-2);color:var(--text-1);text-align:center;margin-bottom:var(--s2);transition:all .12s}
 .dev-btn:active{background:var(--surface-4)}
 .dev-btn-danger{border-color:rgba(255,75,75,.3);color:var(--danger);background:rgba(255,75,75,.08)}
@@ -477,7 +500,7 @@ ul{list-style:none}
     <div class="pd-hdr" id="pd-hdr">
       <button class="pd-back" id="pd-back">&larr; Personas</button>
       <div class="pd-hdr-info"><div class="pd-hdr-name" id="pd-name"></div><div class="pd-hdr-meta" id="pd-meta"></div></div>
-      <div class="pd-hdr-actions"><button class="pd-hdr-btn" id="pd-brief-btn" title="Brief">&#128196;</button><button class="pd-hdr-btn" id="pd-edit-btn" title="Edit">&#9998;</button></div>
+      <div class="pd-hdr-actions"><button class="pd-hdr-btn" id="pd-brief-btn" title="Brief">&#128196;</button><button class="pd-hdr-btn" id="pd-analyze-btn" title="Analyze">&#128202;</button><button class="pd-hdr-btn" id="pd-edit-btn" title="Edit">&#9998;</button></div>
     </div>
     <div id="pd-body"></div>
   </div>
@@ -736,6 +759,7 @@ document.getElementById("sd-back").addEventListener("click",function(){document.
 /* ═══ PERSONA DETAIL ═══ */
 document.getElementById("pd-back").addEventListener("click",function(){document.getElementById("pd-screen").classList.remove("show");pdPid=""});
 document.getElementById("pd-brief-btn").addEventListener("click",function(){if(pdPid)openBrief(pdPid)});
+document.getElementById("pd-analyze-btn").addEventListener("click",function(){if(pdPid)runAnalysis(pdPid)});
 document.getElementById("pd-edit-btn").addEventListener("click",function(){
   if(!pdPid)return;var S=window.validateAIState;if(!S)return;
   var p=(S.personas||[]).find(function(x){return x.id===pdPid});if(!p)return;
@@ -1122,7 +1146,9 @@ function rPersonas(S){
   pL.querySelectorAll(".p-brief-btn").forEach(function(el){el.addEventListener("click",function(e){e.stopPropagation();openBrief(el.dataset.bpid)})});
 }
 
-function openPD(pid){pdPid=pid;document.getElementById("persona-list").style.display="none";document.getElementById("persona-empty").style.display="none";document.getElementById("pd-screen").classList.add("show");renderPD()}
+function openPD(pid){pdPid=pid;document.getElementById("persona-list").style.display="none";document.getElementById("persona-empty").style.display="none";document.getElementById("pd-screen").classList.add("show");renderPD();
+  if(!analysisCache[pid]){fetch(PROXY_BASE+"/api/persona/"+encodeURIComponent(pid)+"/analysis").then(function(r){return r.json()}).then(function(d){if(d&&d.data){analysisCache[pid]=d}}).catch(function(){})}
+}
 
 /* ── PERSONA DETAIL (scrollable single page) ── */
 function renderPD(){
@@ -1217,7 +1243,13 @@ function renderPD(){
   /* G: Behavioral Patterns */
   h+='<div class="sl">PATTERNS</div>';h+=renderSignals(p,allSessions,relC,cSt);
 
-  /* H: Sessions */
+  /* H2: AI Analysis */
+  h+='<div class="sl-row"><div class="sl">AI ANALYSIS</div>';
+  if(analysisCache[p.id])h+='<span class="sl-action" onclick="runAnalysis(\''+esc(p.id)+'\')">&#8635; REFRESH</span>';
+  h+='</div>';
+  h+=renderAnalysis(p,allSessions);
+
+  /* I: Sessions */
   h+='<div class="sl">SESSIONS WITH '+esc(p.name.toUpperCase())+' ('+allSessions.length+')</div>';
   if(!allSessions.length)h+='<div style="font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-3);padding:var(--s2) 0">No sessions tracked</div>';
   else allSessions.slice(0,5).forEach(function(s){
@@ -1357,6 +1389,107 @@ function renderDelta(p,allSessions,S,allNames,cSt){
   if(nT.length){hasContent=true;nT.slice(0,5).forEach(function(t){ch+='<div class="delta-item"><span class="delta-icon d-new">+</span><span>New topic: '+esc(t)+'</span></div>'})}
   if(!hasContent)ch+='<div style="font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-3);padding:var(--s2) 0">No significant changes</div>';
   return ch;
+}
+
+/* ── ANALYSIS ── */
+var analysisCache={},analysisLoading={};
+
+function runAnalysis(pid){
+  analysisLoading[pid]=true;
+  toast("Analyzing...");
+  fetch(PROXY_BASE+"/api/persona/"+encodeURIComponent(pid)+"/analysis",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({trigger:"manual"})}).then(function(r){return r.json()}).then(function(){
+    return fetch(PROXY_BASE+"/api/persona/"+encodeURIComponent(pid)+"/analysis");
+  }).then(function(r){return r.json()}).then(function(data){
+    if(data&&data.data){analysisCache[pid]=data;toast("Analysis complete")}
+    else if(data&&data.error){toast("Analysis: "+data.error)}
+    analysisLoading[pid]=false;
+  }).catch(function(err){toast("Analysis failed");analysisLoading[pid]=false});
+}
+
+function renderAnalysis(p,allSessions){
+  var sc=allSessions.length;
+  if(sc<3){
+    return'<div class="ana-card"><div class="ana-card-title">Not enough data yet</div><div class="ana-card-body">Analysis becomes available after 3 sessions with '+esc(p.name)+'.</div><div class="ana-card-body">Current: '+sc+' of 3 sessions needed</div><div class="ana-progress"><div class="ana-progress-fill" style="width:'+Math.round(sc/3*100)+'%"></div></div></div>';
+  }
+  var cached=analysisCache[p.id];
+  if(analysisLoading[p.id]){
+    return'<div class="skel skel-line w90" style="margin-bottom:var(--s2)"></div><div class="skel skel-line w70" style="margin-bottom:var(--s2)"></div><div class="skel skel-line w80" style="margin-bottom:var(--s2)"></div><div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">Analyzing artifacts across '+sc+' sessions...</div>';
+  }
+  if(!cached||!cached.data){
+    return'<div class="ana-card"><div class="ana-card-title">Tap ANALYZE to generate an intelligence profile</div><button class="dev-btn" style="background:var(--accent-dim);border-color:var(--accent);color:var(--accent);margin-top:var(--s2)" onclick="runAnalysis(\''+esc(p.id)+'\')">ANALYZE</button></div>';
+  }
+  var a=cached.data,h="";
+
+  /* Card 1: Communication Profile */
+  if(a.communicationProfile){var cp=a.communicationProfile;
+    h+='<div class="ana-card"><div class="ana-card-title">Communication Profile <span class="badge badge-'+(cp.confidence==="HIGH"?"ok":cp.confidence==="MEDIUM"?"warn":"neutral")+'">'+cp.confidence+'</span></div>';
+    if(cp.dominantStyle)h+='<div style="margin-bottom:var(--s2)"><span class="badge badge-info">'+esc(cp.dominantStyle)+'</span></div>';
+    if(cp.summary)h+='<div class="ana-card-body">'+esc(cp.summary)+'</div>';
+    if(cp.topIntents&&cp.topIntents.length){h+='<div style="display:flex;gap:var(--s1);flex-wrap:wrap;margin-top:var(--s2)">';cp.topIntents.forEach(function(i){h+='<span class="badge badge-neutral">'+esc(i)+'</span>'});h+='</div>'}
+    if(cp.recentVsHistorical)h+='<div style="font:400 var(--fs-xs)/var(--lh-base) var(--font-mono);color:var(--text-3);margin-top:var(--s2)">'+esc(cp.recentVsHistorical)+'</div>';
+    h+='<div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">Based on '+cp.sessionCount+' sessions</div></div>'}
+
+  /* Card 2: Reliability Signals */
+  if(a.reliabilitySignals){var rs=a.reliabilitySignals;
+    h+='<div class="ana-card"><div class="ana-card-title">Reliability Signals <span class="badge badge-'+(rs.confidence==="HIGH"?"ok":rs.confidence==="MEDIUM"?"warn":"neutral")+'">'+rs.confidence+'</span></div>';
+    if(rs.commitmentPattern)h+='<div class="ana-row"><div class="ana-row-label">Commitments</div><div class="ana-row-val">'+esc(rs.commitmentPattern)+'</div></div>';
+    if(rs.consistencyPattern)h+='<div class="ana-row"><div class="ana-row-label">Consistency</div><div class="ana-row-val">'+esc(rs.consistencyPattern)+'</div></div>';
+    if(rs.claimAccuracyPattern)h+='<div class="ana-row"><div class="ana-row-label">Claim accuracy</div><div class="ana-row-val">'+esc(rs.claimAccuracyPattern)+'</div></div>';
+    if(rs.denominatorNote)h+='<div style="font:400 var(--fs-xs)/var(--lh-base) var(--font-sans);color:var(--text-3);font-style:italic;margin-top:var(--s2)">'+esc(rs.denominatorNote)+'</div>';
+    h+='<div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">Based on '+rs.evidenceCount+' artifacts</div></div>'}
+
+  /* Card 3: Topics and Behavior */
+  if(a.topicsAndBehavior){var tb=a.topicsAndBehavior;
+    h+='<div class="ana-card"><div class="ana-card-title">Topics and Behavior</div>';
+    if(tb.frequentTopics&&tb.frequentTopics.length){h+='<div style="display:flex;gap:var(--s1);flex-wrap:wrap;margin-bottom:var(--s2)">';tb.frequentTopics.forEach(function(t){h+='<span class="badge badge-neutral">'+esc(t)+'</span>'});h+='</div>'}
+    if(tb.aboveBaselineHedgingTopics&&tb.aboveBaselineHedgingTopics.length){
+      h+='<div style="font:500 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin:var(--s2) 0 var(--s1)">ELEVATED HEDGING OBSERVED WHEN DISCUSSING</div>';
+      tb.aboveBaselineHedgingTopics.forEach(function(t){h+='<div class="ana-row"><div class="ana-row-label">'+esc(t.topic)+'</div><div class="ana-row-val">'+esc(t.observation)+' <span class="badge badge-'+(t.confidence==="HIGH"?"ok":t.confidence==="MEDIUM"?"warn":"neutral")+'">'+t.confidence+'</span></div></div>'})}
+    if(tb.topicsTheyIntroduce&&tb.topicsTheyIntroduce.length||tb.topicsTheyDeferOn&&tb.topicsTheyDeferOn.length){
+      h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);margin-top:var(--s2)">';
+      h+='<div><div style="font:500 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-bottom:var(--s1)">INTRODUCES</div>';
+      (tb.topicsTheyIntroduce||[]).forEach(function(t){h+='<div style="font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)">'+esc(t)+'</div>'});h+='</div>';
+      h+='<div><div style="font:500 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-bottom:var(--s1)">DEFERS ON</div>';
+      (tb.topicsTheyDeferOn||[]).forEach(function(t){h+='<div style="font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)">'+esc(t)+'</div>'});h+='</div></div>'}
+    h+='</div>'}
+
+  /* Card 4: Likely Interaction Outcomes */
+  if(a.likelyInteractionOutcomes){var lio=a.likelyInteractionOutcomes;
+    h+='<div class="ana-card ana-card-accent"><div class="ana-card-title">Likely Interaction Outcomes</div>';
+    if(lio.summary)h+='<div class="ana-card-body" style="margin-bottom:var(--s3)">'+esc(lio.summary)+'</div>';
+    if(lio.conditionalScenarios)(lio.conditionalScenarios||[]).forEach(function(s){
+      var otBadge=s.observationType==="recent"?"badge-recent":s.observationType==="recurring"?"badge-recurring":"badge-historical";
+      h+='<div class="ana-scenario"><div class="ana-scenario-if">IF '+esc(s.condition)+'</div><div class="ana-scenario-then">&rarr; '+esc(s.likelyOutcome)+'</div><div class="ana-scenario-meta"><span class="badge badge-'+(s.confidence==="HIGH"?"ok":s.confidence==="MEDIUM"?"warn":"neutral")+'">'+s.confidence+'</span><span class="badge '+otBadge+'">'+esc(s.observationType)+'</span><span style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3)">'+s.evidenceCount+' instances</span></div></div>'});
+    if(lio.recommendedApproaches&&lio.recommendedApproaches.length){h+='<div style="margin-top:var(--s2)">';lio.recommendedApproaches.forEach(function(a){h+='<div style="display:flex;gap:var(--s2);padding:var(--s1) 0;font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--ok)">&check; '+esc(a)+'</div>'});h+='</div>'}
+    h+='</div>'}
+
+  /* Card 5: Influence Patterns */
+  if(a.influencePatterns&&a.influencePatterns.confidence!=="LOW"){var ip=a.influencePatterns;
+    h+='<div class="ana-card"><div class="ana-card-title">Influence Patterns <span class="badge badge-'+(ip.confidence==="HIGH"?"ok":"warn")+'">'+ip.confidence+'</span></div>';
+    if(ip.summary)h+='<div class="ana-card-body">'+esc(ip.summary)+'</div>';
+    if(ip.patternsObserved)(ip.patternsObserved||[]).forEach(function(p){h+='<div style="padding:var(--s1) 0;font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-2)">&bull; '+esc(p)+'</div>'});
+    h+='<div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">Based on '+ip.evidenceCount+' instances</div></div>'}
+
+  /* Card 6: Interaction Insights */
+  if(a.interactionInsights){var ii=a.interactionInsights;
+    h+='<div class="ana-card"><div class="ana-card-title">Interaction Insights</div>';
+    if(ii.effectiveApproaches&&ii.effectiveApproaches.length){h+='<div style="margin-bottom:var(--s2)">';ii.effectiveApproaches.forEach(function(a){h+='<div style="padding:var(--s1) 0;font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--ok)">&check; '+esc(a)+'</div>'});h+='</div>'}
+    if(ii.watchPoints&&ii.watchPoints.length){h+='<div style="margin-bottom:var(--s2)">';ii.watchPoints.forEach(function(w){h+='<div style="padding:var(--s1) 0;font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--warn)">&bull; '+esc(w)+'</div>'});h+='</div>'}
+    if(ii.suggestedNextSteps&&ii.suggestedNextSteps.length){ii.suggestedNextSteps.forEach(function(s){h+='<div style="padding:var(--s2) var(--s3);background:var(--surface-2);border:1px solid var(--accent);border-radius:var(--r-sm);margin-bottom:var(--s1);font:400 var(--fs-sm)/var(--lh-base) var(--font-sans);color:var(--text-1)">&rarr; '+esc(s)+'</div>'})}
+    h+='</div>'}
+
+  /* Card 7: Data Quality — ALWAYS RENDER */
+  var dq=a.dataQuality||{};
+  h+='<div class="ana-dq"><div class="ana-dq-title">Data Quality</div>';
+  h+='<div class="ana-dq-row">Based on '+(dq.totalArtifacts||0)+' artifacts from '+(dq.totalSessions||0)+' sessions</div>';
+  if(dq.recencyNote)h+='<div class="ana-dq-row">'+esc(dq.recencyNote)+'</div>';
+  if(dq.limitations&&dq.limitations.length){dq.limitations.forEach(function(l){h+='<div class="ana-dq-row" style="color:var(--text-3)">&bull; '+esc(l)+'</div>'})}
+  if(dq.sectionsSuppressed&&dq.sectionsSuppressed.length){h+='<div class="ana-suppressed">Insufficient data for: '+dq.sectionsSuppressed.map(function(s){return esc(s)}).join(", ")+'</div>'}
+  if(a.identityQuality){h+='<div class="ana-dq-row">Identity: <span class="badge badge-'+(a.identityQuality.confidence==="HIGH"?"ok":a.identityQuality.confidence==="MEDIUM"?"warn":"neutral")+'">'+a.identityQuality.confidence+'</span> '+esc(a.identityQuality.note||"")+'</div>'}
+  if(cached.generatedAt)h+='<div style="font:400 var(--fs-xs)/1 var(--font-mono);color:var(--text-3);margin-top:var(--s2)">Generated '+formatTime(cached.generatedAt)+'</div>';
+  h+='</div>';
+
+  return h;
 }
 
 /* ── CONTROL ── */
