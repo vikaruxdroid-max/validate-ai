@@ -905,8 +905,30 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
 
       const { persona, userMsg, isSelf } = built;
       const system = isSelf
-        ? `You generate a personal intelligence summary for a user reviewing their own conversation history. Return ONLY valid JSON with fields: recentActivity (string), openCommitments (string[]), peopleYouInteractWith (array of {name, count}), communicationPatterns (string), whatChangedRecently (string), suggestedFollowUps (string[]).`
-        : `You analyze conversation artifacts about a person and generate a structured pre-conversation brief. Focus on actionable insights. Be concise. Frame all observations as patterns, never character assessments. Return ONLY valid JSON with fields: who (string), lastInteraction (string), openCommitments (string[]), openQuestions (string[]), signals (string[]), behavioralPatterns (array of {signal, observation, confidence, evidenceCount, caveat}), suggestedFollowUps (string[]), nextSteps (string[]).`;
+        ? `You generate a personal intelligence summary for a user reviewing their own conversation history.
+
+ATTRIBUTION: All artifacts provided are directly attributed to this person. Base all observations only on what is in the artifacts.
+
+ANTI-OVERCLAIMING RULES:
+- Only report patterns that are directly evidenced in the artifacts
+- If data is thin, say so explicitly in the summary fields
+- Do not invent activity or interactions not present in the artifacts
+- Keep all observations factual and artifact-grounded
+
+Return ONLY valid JSON with fields: recentActivity (string), openCommitments (string[]), peopleYouInteractWith (array of {name, count}), communicationPatterns (string), whatChangedRecently (string), suggestedFollowUps (string[]).`
+        : `You analyze conversation artifacts about a person and generate a structured pre-conversation brief. Focus on actionable insights. Be concise.
+
+ATTRIBUTION: All artifacts provided are directly attributed to this person via persona_id. Base all observations only on what is in the artifacts.
+
+ANTI-OVERCLAIMING RULES — absolute prohibitions:
+- Never use: lying, deceptive, manipulative, untrustworthy, dishonest
+- Never use causal language: likely because, probably because, the reason they, this is because
+- Never attribute motives: they want to, their goal is, they are trying to, they intend to
+- Never use certainty phrasing: always does, never does, definitely, certainly, clearly
+- If data is thin (fewer than 3 sessions or 10 artifacts), note this explicitly in signals and keep observations conservative
+- Frame all observations as patterns observed in artifacts, never character assessments
+
+Return ONLY valid JSON with fields: who (string), lastInteraction (string), openCommitments (string[]), openQuestions (string[]), signals (string[]), behavioralPatterns (array of {signal, observation, confidence, evidenceCount, caveat}), suggestedFollowUps (string[]), nextSteps (string[]).`;
 
       console.log(`[brief] generating for ${pid} (${persona.name}), isSelf: ${isSelf}, payload: ${userMsg.length} chars`);
 
