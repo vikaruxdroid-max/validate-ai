@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { existsSync, readFileSync, renameSync } from "fs";
 import { dirname, join } from "path";
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // ── Schema ──────────────────────────────────────────────────────────
 
@@ -128,35 +128,35 @@ CREATE TRIGGER IF NOT EXISTS fts_commitments_insert AFTER INSERT ON commitments 
   INSERT INTO search_index(id, type, text, persona_id, session_id) VALUES (NEW.id, 'commitment', NEW.text, NEW.persona_id, NEW.session_id);
 END;
 CREATE TRIGGER IF NOT EXISTS fts_commitments_delete AFTER DELETE ON commitments BEGIN
-  INSERT INTO search_index(search_index, id, type, text, persona_id, session_id) VALUES ('delete', OLD.id, 'commitment', OLD.text, OLD.persona_id, OLD.session_id);
+  DELETE FROM search_index WHERE id = OLD.id AND type = 'commitment';
 END;
 
 CREATE TRIGGER IF NOT EXISTS fts_decisions_insert AFTER INSERT ON decisions BEGIN
   INSERT INTO search_index(id, type, text, persona_id, session_id) VALUES (NEW.id, 'decision', NEW.text, NEW.persona_id, NEW.session_id);
 END;
 CREATE TRIGGER IF NOT EXISTS fts_decisions_delete AFTER DELETE ON decisions BEGIN
-  INSERT INTO search_index(search_index, id, type, text, persona_id, session_id) VALUES ('delete', OLD.id, 'decision', OLD.text, OLD.persona_id, OLD.session_id);
+  DELETE FROM search_index WHERE id = OLD.id AND type = 'decision';
 END;
 
 CREATE TRIGGER IF NOT EXISTS fts_entities_insert AFTER INSERT ON entities BEGIN
   INSERT INTO search_index(id, type, text, persona_id, session_id) VALUES (NEW.id, 'entity', NEW.text || ' ' || COALESCE(NEW.context, ''), NEW.persona_id, NEW.session_id);
 END;
 CREATE TRIGGER IF NOT EXISTS fts_entities_delete AFTER DELETE ON entities BEGIN
-  INSERT INTO search_index(search_index, id, type, text, persona_id, session_id) VALUES ('delete', OLD.id, 'entity', OLD.text || ' ' || COALESCE(OLD.context, ''), OLD.persona_id, OLD.session_id);
+  DELETE FROM search_index WHERE id = OLD.id AND type = 'entity';
 END;
 
 CREATE TRIGGER IF NOT EXISTS fts_contradictions_insert AFTER INSERT ON contradictions BEGIN
   INSERT INTO search_index(id, type, text, persona_id, session_id) VALUES (NEW.id, 'contradiction', NEW.summary, NEW.persona_id, NEW.session_id);
 END;
 CREATE TRIGGER IF NOT EXISTS fts_contradictions_delete AFTER DELETE ON contradictions BEGIN
-  INSERT INTO search_index(search_index, id, type, text, persona_id, session_id) VALUES ('delete', OLD.id, 'contradiction', OLD.summary, OLD.persona_id, OLD.session_id);
+  DELETE FROM search_index WHERE id = OLD.id AND type = 'contradiction';
 END;
 
 CREATE TRIGGER IF NOT EXISTS fts_pinned_insert AFTER INSERT ON pinned_items BEGIN
   INSERT INTO search_index(id, type, text, persona_id, session_id) VALUES (NEW.id, 'pinned', NEW.text, NEW.persona_id, NEW.session_id);
 END;
 CREATE TRIGGER IF NOT EXISTS fts_pinned_delete AFTER DELETE ON pinned_items BEGIN
-  INSERT INTO search_index(search_index, id, type, text, persona_id, session_id) VALUES ('delete', OLD.id, 'pinned', OLD.text, OLD.persona_id, OLD.session_id);
+  DELETE FROM search_index WHERE id = OLD.id AND type = 'pinned';
 END;
 `;
 
@@ -199,6 +199,7 @@ function runMigrations(db: Database.Database, fromVersion: number): void {
   if (fromVersion < 2) migrateV1toV2(db);
   if (fromVersion < 3) migrateV2toV3(db);
   if (fromVersion < 4) migrateV3toV4(db);
+  if (fromVersion < 5) migrateV4toV5(db);
 }
 
 function migrateV1toV2(db: Database.Database): void {
@@ -233,6 +234,42 @@ function migrateV3toV4(db: Database.Database): void {
   console.log("[db] Running migration v3 → v4: add analysis_json column");
   try { db.exec("ALTER TABLE personas ADD COLUMN analysis_json TEXT"); } catch { /* already exists */ }
   console.log("[db] Migration v3 → v4 complete");
+}
+
+function migrateV4toV5(db: Database.Database): void {
+  console.log("[db] Running migration v4 → v5: fix FTS5 delete triggers");
+  const triggers = [
+    "fts_commitments_delete",
+    "fts_decisions_delete",
+    "fts_entities_delete",
+    "fts_contradictions_delete",
+    "fts_pinned_delete",
+  ];
+  for (const t of triggers) {
+    db.exec(`DROP TRIGGER IF EXISTS ${t}`);
+  }
+  db.exec(`
+    CREATE TRIGGER fts_commitments_delete AFTER DELETE ON commitments BEGIN
+      DELETE FROM search_index WHERE id = OLD.id AND type = 'commitment';
+    END;
+    CREATE TRIGGER fts_decisions_delete AFTER DELETE ON decisions BEGIN
+      DELETE FROM search_index WHERE id = OLD.id AND type = 'decision';
+    END;
+    CREATE TRIGGER fts_entities_delete AFTER DELETE ON entities BEGIN
+      DELETE FROM search_index WHERE id = OLD.id AND type = 'entity';
+    END;
+    CREATE TRIGGER fts_contradictions_delete AFTER DELETE ON contradictions BEGIN
+      DELETE FROM search_index WHERE id = OLD.id AND type = 'contradiction';
+    END;
+    CREATE TRIGGER fts_pinned_delete AFTER DELETE ON pinned_items BEGIN
+      DELETE FROM search_index WHERE id = OLD.id AND type = 'pinned';
+    END;
+  `);
+  const triggerCheck = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'fts_%_delete'"
+  ).all();
+  console.log("[db] FTS delete triggers present:", triggerCheck.map((r: any) => r.name).join(", "));
+  console.log("[db] Migration v4 → v5 complete — FTS5 delete triggers recreated");
 }
 
 // ── Pattern Scoring ─────────────────────────────────────────────────
