@@ -9,6 +9,7 @@ import { initDatabase, importJSON, exportJSON, clearAll, computePersonaPatternSc
 const DG_KEY = process.env.DEEPGRAM_API_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 const DEV_TOKEN = process.env.DEV_TOKEN ?? "";
+const DEVICE_RPC_TOKEN = process.env.DEVICE_RPC_TOKEN ?? "";
 const PORT = 3001;
 const CERT_DIR = "/etc/letsencrypt/live/vikarux-g2.centralus.cloudapp.azure.com";
 const MEMORY_PATH = process.env.MEMORY_PATH ?? "/home/vikarux/validate-ai/session-memory.json";
@@ -24,6 +25,7 @@ if (!DG_KEY) {
 console.log("[proxy] Deepgram key present:", DG_KEY.length > 0);
 console.log("[proxy] Anthropic key present:", ANTHROPIC_KEY.length > 0);
 console.log("[proxy] Dev token set:", DEV_TOKEN.length > 0);
+console.log("[proxy] Device RPC token set:", DEVICE_RPC_TOKEN.length > 0);
 console.log("[proxy] DB path:", DB_PATH);
 console.log("[proxy] Analysis timeout:", ANALYSIS_TIMEOUT_MS, "ms");
 console.log("[proxy] Analysis max tokens:", ANALYSIS_MAX_TOKENS);
@@ -48,11 +50,22 @@ function readBody(req: IncomingMessage): Promise<string> {
 // ── Server-side Claude caller ─────────────────────────────────────────
 // Node.js only. No import.meta.env. No browser-only headers.
 
-async function callClaude(system: string, userMsg: string, maxTokens = 2048): Promise<string> {
+type ClaudeCallOptions = {
+  model: string;
+  maxTokens: number;
+  timeoutMs?: number;
+};
+
+async function callClaude(
+  system: string,
+  userMsg: string,
+  opts: ClaudeCallOptions,
+): Promise<string> {
   if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY not set in .env");
 
+  const timeoutMs = opts.timeoutMs ?? 30_000;
   const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
+  const tid = setTimeout(() => controller.abort(), timeoutMs);
 
   let res: Response;
   try {
@@ -64,8 +77,8 @@ async function callClaude(system: string, userMsg: string, maxTokens = 2048): Pr
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
-        max_tokens: maxTokens,
+        model: opts.model,
+        max_tokens: opts.maxTokens,
         system,
         messages: [{ role: "user", content: userMsg }],
       }),
@@ -73,7 +86,7 @@ async function callClaude(system: string, userMsg: string, maxTokens = 2048): Pr
     });
   } catch (err: any) {
     clearTimeout(tid);
-    if (err?.name === "AbortError") throw new Error(`Claude timed out after ${ANALYSIS_TIMEOUT_MS}ms`);
+    if (err?.name === "AbortError") throw new Error(`Claude timed out after ${timeoutMs}ms`);
     throw err;
   }
   clearTimeout(tid);
@@ -211,14 +224,27 @@ function validateAnalysisShape(obj: any): void {
 async function callClaudeJSON(
   system: string,
   originalUserMsg: string,
-  opts: { validator: (obj: any) => void; maxTokens?: number; logTag?: string },
+  opts: {
+    validator: (obj: any) => void;
+    model?: string;
+    maxTokens?: number;
+    timeoutMs?: number;
+    logTag?: string;
+  },
 ): Promise<{ ok: true; data: any } | { ok: false; error: string; rawResponse?: string }> {
-  const { validator, maxTokens = 2048, logTag = "claude-json" } = opts;
+  const {
+    validator,
+    model = "claude-sonnet-4-5",
+    maxTokens = 2048,
+    timeoutMs = ANALYSIS_TIMEOUT_MS,
+    logTag = "claude-json",
+  } = opts;
+  const claudeOpts: ClaudeCallOptions = { model, maxTokens, timeoutMs };
   let firstRaw: string | undefined;
   let secondRaw: string | undefined;
 
   try {
-    const raw = await callClaude(system, originalUserMsg, maxTokens);
+    const raw = await callClaude(system, originalUserMsg, claudeOpts);
     firstRaw = raw;
     const parsed = extractJSON(raw);
     validator(parsed);
@@ -236,7 +262,7 @@ async function callClaudeJSON(
       `Previous response (first 1000 chars):\n${(firstRaw ?? "").slice(0, 1000)}\n\n` +
       `Return ONLY the corrected JSON object. No markdown fences, no explanation, no text outside the JSON.`;
 
-    const raw2 = await callClaude(system, repairMsg, maxTokens);
+    const raw2 = await callClaude(system, repairMsg, claudeOpts);
     secondRaw = raw2;
     const parsed2 = extractJSON(raw2);
     validator(parsed2);
@@ -645,7 +671,7 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "*";
 function setCORSHeaders(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Dev-Token");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Dev-Token, X-Device-Token");
   if (ALLOWED_ORIGIN !== "*") {
     res.setHeader("Vary", "Origin");
   }
@@ -985,6 +1011,172 @@ Return ONLY valid JSON with fields: who (string), lastInteraction (string), open
 
       return;
     }
+  }
+
+  if (req.url === "/api/rpc" && req.method === "POST") {
+    const isLocal =
+      req.socket.remoteAddress === "127.0.0.1" ||
+      req.socket.remoteAddress === "::1" ||
+      req.socket.remoteAddress === "::ffff:127.0.0.1";
+    const tokenHeader = req.headers["x-device-token"];
+    const hasValidToken = DEVICE_RPC_TOKEN.length > 0
+      ? tokenHeader === DEVICE_RPC_TOKEN
+      : isLocal;
+
+    if (!hasValidToken) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: false,
+        op: null,
+        data: null,
+        error: "unauthorized",
+        code: "RPC_AUTH",
+        degraded: false,
+      }));
+      return;
+    }
+
+    readBody(req).then(async (rawBody) => {
+      let envelope: any;
+      try {
+        envelope = JSON.parse(rawBody);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false, op: null, data: null,
+          error: "malformed JSON body", code: "RPC_BAD_REQUEST", degraded: false,
+        }));
+        return;
+      }
+
+      const op = envelope?.op;
+      const context = envelope?.context;
+      const sessionId = envelope?.sessionId ?? null;
+      const personaId = envelope?.personaId ?? null;
+
+      if (typeof op !== "string" || op.length === 0) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false, op: null, data: null,
+          error: "op must be a non-empty string", code: "RPC_BAD_REQUEST", degraded: false,
+        }));
+        return;
+      }
+      if (!context || typeof context !== "object" || Array.isArray(context)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false, op, data: null,
+          error: "context must be an object", code: "RPC_BAD_REQUEST", degraded: false,
+        }));
+        return;
+      }
+      if (sessionId !== null && typeof sessionId !== "string") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false, op, data: null,
+          error: "sessionId must be string or null", code: "RPC_BAD_REQUEST", degraded: false,
+        }));
+        return;
+      }
+      if (personaId !== null && typeof personaId !== "string") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          ok: false, op, data: null,
+          error: "personaId must be string or null", code: "RPC_BAD_REQUEST", degraded: false,
+        }));
+        return;
+      }
+
+      // ── Wave 1 op: recall_memory ─────────────────────────────────
+      if (op === "recall_memory") {
+        const query = context.query;
+        if (typeof query !== "string" || query.trim().length === 0) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: false, op, data: null,
+            error: "context.query must be a non-empty string",
+            code: "RPC_BAD_REQUEST", degraded: false,
+          }));
+          return;
+        }
+
+        let hits: any[] = [];
+        try {
+          hits = db.prepare(
+            `SELECT id, type, text FROM search_index
+             WHERE search_index MATCH ?
+             ORDER BY bm25(search_index)
+             LIMIT 10`
+          ).all(query) as any[];
+        } catch (err: any) {
+          // FTS5 MATCH can throw on malformed query syntax — treat as zero hits
+          console.warn(`[rpc] recall_memory FTS error for query ${JSON.stringify(query)}:`, err.message);
+          hits = [];
+        }
+
+        if (hits.length === 0) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: true, op, data: { found: false, matches: [], context: null },
+            error: null, code: null, degraded: false,
+          }));
+          return;
+        }
+
+        const shortlist = hits.map((h) => ({ id: h.id, type: h.type, text: h.text }));
+        const system = "You are a memory recall assistant. Given a search query and a list of matching conversation artifacts, synthesize a helpful recall response. Be concise and factual. Return ONLY valid JSON: { found: true, matches: [{id, type, text}], context: string }";
+        const userMsg = `Query: ${query}\n\nMatching artifacts:\n${JSON.stringify(shortlist)}`;
+
+        console.log(`[rpc] recall_memory: ${hits.length} FTS hits for query ${JSON.stringify(query.slice(0, 60))}`);
+
+        try {
+          const raw = await callClaude(system, userMsg, {
+            model: "claude-haiku-4-5-20251001",
+            maxTokens: 512,
+            timeoutMs: 10_000,
+          });
+          let parsed: any;
+          try {
+            parsed = extractJSON(raw);
+          } catch (parseErr: any) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              ok: false, op, data: null,
+              error: `could not parse Claude response: ${parseErr.message}`,
+              code: "RPC_VALIDATION_FAILED", degraded: false,
+            }));
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: true, op, data: parsed,
+            error: null, code: null, degraded: false,
+          }));
+        } catch (err: any) {
+          console.error(`[rpc] recall_memory Claude error:`, err.message);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: false, op, data: null,
+            error: err.message, code: "RPC_CLAUDE_ERROR", degraded: false,
+          }));
+        }
+        return;
+      }
+
+      // Unknown op
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: false, op, data: null,
+        error: "unknown operation", code: "RPC_UNKNOWN_OP", degraded: false,
+      }));
+    }).catch((err) => {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: false, op: null, data: null,
+        error: err?.message ?? "read error", code: "RPC_INTERNAL", degraded: false,
+      }));
+    });
+    return;
   }
 
   if (req.url?.startsWith("/api/dev/")) {
