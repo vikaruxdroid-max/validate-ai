@@ -46,7 +46,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 // ── Server-side Claude caller ─────────────────────────────────────────
 // Node.js only. No import.meta.env. No browser-only headers.
 
-async function callClaude(system: string, userMsg: string): Promise<string> {
+async function callClaude(system: string, userMsg: string, maxTokens = 2048): Promise<string> {
   if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY not set in .env");
 
   const controller = new AbortController();
@@ -63,7 +63,7 @@ async function callClaude(system: string, userMsg: string): Promise<string> {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-5",
-        max_tokens: 2048,
+        max_tokens: maxTokens,
         system,
         messages: [{ role: "user", content: userMsg }],
       }),
@@ -203,47 +203,63 @@ function validateAnalysisShape(obj: any): void {
   }
 }
 
-// Calls Claude with JSON extraction, shape validation, and one repair retry.
-// On repair, the original analysis data is included so Claude has full context.
-// Never throws — returns discriminated union.
-async function callClaudeAnalysis(
+// Generic: calls Claude with JSON extraction, caller-provided validation,
+// and one repair retry. On repair, the original user msg AND the broken
+// response are included. Never throws — returns discriminated union.
+async function callClaudeJSON(
   system: string,
   originalUserMsg: string,
+  opts: { validator: (obj: any) => void; maxTokens?: number; logTag?: string },
 ): Promise<{ ok: true; data: any } | { ok: false; error: string; rawResponse?: string }> {
+  const { validator, maxTokens = 2048, logTag = "claude-json" } = opts;
   let firstRaw: string | undefined;
   let secondRaw: string | undefined;
 
-  // Attempt 1 — standard call
   try {
-    const raw = await callClaude(system, originalUserMsg);
+    const raw = await callClaude(system, originalUserMsg, maxTokens);
     firstRaw = raw;
     const parsed = extractJSON(raw);
-    validateAnalysisShape(parsed);
+    validator(parsed);
     return { ok: true, data: parsed };
   } catch (err: any) {
-    console.warn("[analysis] attempt 1 failed:", err.message);
-    if (firstRaw) console.warn("[analysis] attempt 1 raw (500 chars):", firstRaw.slice(0, 500));
+    console.warn(`[${logTag}] attempt 1 failed:`, err.message);
+    if (firstRaw) console.warn(`[${logTag}] attempt 1 raw (500 chars):`, firstRaw.slice(0, 500));
   }
 
-  // Attempt 2 — repair: include the original data AND the broken response.
   try {
     const repairMsg =
       `${originalUserMsg}\n\n` +
       `---\n` +
-      `Your previous attempt at this analysis could not be parsed or failed validation.\n\n` +
+      `Your previous attempt could not be parsed or failed validation.\n\n` +
       `Previous response (first 1000 chars):\n${(firstRaw ?? "").slice(0, 1000)}\n\n` +
       `Return ONLY the corrected JSON object. No markdown fences, no explanation, no text outside the JSON.`;
 
-    const raw2 = await callClaude(system, repairMsg);
+    const raw2 = await callClaude(system, repairMsg, maxTokens);
     secondRaw = raw2;
     const parsed2 = extractJSON(raw2);
-    validateAnalysisShape(parsed2);
-    console.log("[analysis] repair attempt succeeded");
+    validator(parsed2);
+    console.log(`[${logTag}] repair attempt succeeded`);
     return { ok: true, data: parsed2 };
   } catch (err2: any) {
-    console.error("[analysis] repair attempt also failed:", err2.message);
-    if (secondRaw) console.error("[analysis] attempt 2 raw (500 chars):", secondRaw.slice(0, 500));
+    console.error(`[${logTag}] repair attempt also failed:`, err2.message);
+    if (secondRaw) console.error(`[${logTag}] attempt 2 raw (500 chars):`, secondRaw.slice(0, 500));
     return { ok: false, error: err2.message, rawResponse: firstRaw?.slice(0, 500) };
+  }
+}
+
+function callClaudeAnalysis(system: string, originalUserMsg: string) {
+  return callClaudeJSON(system, originalUserMsg, {
+    validator: validateAnalysisShape,
+    maxTokens: 2048,
+    logTag: "analysis",
+  });
+}
+
+// Lenient brief validator — briefs have varied fields by isSelf and the
+// client has always accepted whatever Claude produced. Just require object.
+function validateBriefShape(obj: any): void {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    throw new Error("Brief response is not a JSON object");
   }
 }
 
@@ -432,6 +448,90 @@ function buildAnalysisPayload(personaId: string): BuildResult {
   return { persona, userMsg };
 }
 
+// ── Brief payload builder ─────────────────────────────────────────────
+// Simpler than analysis: no insufficiency thresholds (briefs useful even
+// with 1 session), only sessions/commitments/entities, commitment status
+// surfaced so the model can reason about openCommitments.
+
+type BriefBuildResult = null | { persona: any; userMsg: string; isSelf: boolean };
+
+function buildBriefPayload(personaId: string): BriefBuildResult {
+  const persona = db.prepare("SELECT * FROM personas WHERE id = ?").get(personaId) as any;
+  if (!persona) return null;
+
+  const topCommits = db.prepare(
+    `SELECT text, owner, due_date_text, status, importance_score
+     FROM commitments WHERE persona_id = ?
+     ORDER BY importance_score DESC LIMIT 20`
+  ).all(personaId) as any[];
+
+  const topEntities = db.prepare(
+    `SELECT text, type, context, importance_score
+     FROM entities WHERE persona_id = ?
+     ORDER BY importance_score DESC LIMIT 20`
+  ).all(personaId) as any[];
+
+  const sidRows = db.prepare(`
+    SELECT DISTINCT session_id FROM (
+      SELECT session_id FROM commitments WHERE persona_id = ? AND session_id IS NOT NULL
+      UNION SELECT session_id FROM decisions WHERE persona_id = ? AND session_id IS NOT NULL
+      UNION SELECT session_id FROM entities WHERE persona_id = ? AND session_id IS NOT NULL
+      UNION SELECT session_id FROM contradictions WHERE persona_id = ? AND session_id IS NOT NULL
+    )
+  `).all(personaId, personaId, personaId, personaId) as any[];
+
+  const sids = sidRows.map((r: any) => r.session_id);
+
+  let sessions: any[] = [];
+  if (sids.length > 0) {
+    const ph = sids.map(() => "?").join(",");
+    sessions = db.prepare(
+      `SELECT id, label, started_at, ended_at, stats_json
+       FROM sessions WHERE id IN (${ph})
+       ORDER BY started_at DESC`
+    ).all(...sids) as any[];
+  }
+
+  let aliases: string[] = [];
+  try { aliases = JSON.parse(persona.aliases_json || "[]"); } catch { aliases = []; }
+
+  let signalSnapshots: any[] = [];
+  try { signalSnapshots = JSON.parse(persona.signal_snapshots_json || "[]"); } catch { signalSnapshots = []; }
+
+  const isSelf = persona.is_self === 1;
+
+  const payload = {
+    persona: {
+      name: persona.name,
+      aliases,
+      notes: persona.notes ?? null,
+      sessionCount: sids.length,
+    },
+    sessions: sessions.map((s) => {
+      let stats: any = {};
+      try { stats = JSON.parse(s.stats_json || "{}"); } catch { stats = {}; }
+      return { label: s.label, startedAt: s.started_at, endedAt: s.ended_at, stats };
+    }),
+    commitments: topCommits.map((c) => ({
+      text: c.text,
+      owner: c.owner ?? null,
+      dueDate: c.due_date_text ?? null,
+      done: c.status === "done",
+      score: c.importance_score ?? 0,
+    })),
+    entities: topEntities.map((e) => ({
+      text: e.text,
+      type: e.type,
+      context: e.context ?? null,
+      score: e.importance_score ?? 0,
+    })),
+    signalSnapshots: signalSnapshots.slice(0, 10),
+  };
+
+  const userMsg = `Person: ${persona.name}\nArtifacts:\n${JSON.stringify(payload)}`;
+  return { persona, userMsg, isSelf };
+}
+
 // ── Analysis system prompt ────────────────────────────────────────────
 
 const ANALYSIS_SYSTEM = `You are a behavioral intelligence analyst. Generate a structured profile from conversation artifacts.
@@ -610,7 +710,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     return;
   }
 
-  const personaMatch = req.url?.match(/^\/api\/persona\/([^/]+)\/(pattern-scores|analysis)$/);
+  const personaMatch = req.url?.match(/^\/api\/persona\/([^/]+)\/(pattern-scores|analysis|brief)$/);
   if (personaMatch) {
     const pid = decodeURIComponent(personaMatch[1]);
     const action = personaMatch[2];
@@ -739,6 +839,124 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
         console.log(`[analysis] stored for ${pid} (${persona.name})`);
       }).catch((err) => {
         console.error(`[analysis] unexpected error for ${pid}:`, err.message);
+      });
+
+      return;
+    }
+
+    if (action === "brief" && req.method === "GET") {
+      try {
+        const row = db.prepare("SELECT brief_json FROM personas WHERE id = ?").get(pid) as any;
+        if (!row) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(errBody("Persona not found", "NOT_FOUND"));
+          return;
+        }
+        if (!row.brief_json) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end("null");
+          return;
+        }
+        let stored: any;
+        try {
+          stored = JSON.parse(row.brief_json);
+        } catch (parseErr: any) {
+          console.error(`[brief] malformed brief_json for ${pid}:`, parseErr.message);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            data: null,
+            generatedAt: null,
+            failed: true,
+            error: "Stored brief is malformed and cannot be read. Re-run brief to regenerate.",
+            code: "CACHE_PARSE_ERROR",
+          }));
+          return;
+        }
+        // Legacy: raw brief written by old client code had openCommitments at root
+        // with no {data, failed} envelope.
+        const isLegacy = stored.openCommitments != null && stored.data === undefined && stored.failed == null;
+        const resolvedData = isLegacy ? stored : (stored.data ?? null);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          data: resolvedData,
+          generatedAt: stored.generatedAt ?? null,
+          failed: isLegacy ? false : (stored.failed ?? false),
+          error: isLegacy ? null : (stored.error ?? null),
+        }));
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(errBody(err.message, "BRIEF_READ_ERROR"));
+      }
+      return;
+    }
+
+    if (action === "brief" && req.method === "POST") {
+      const built = buildBriefPayload(pid);
+      if (!built) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(errBody("Persona not found", "NOT_FOUND"));
+        return;
+      }
+
+      res.writeHead(202, { "Content-Type": "application/json" });
+      res.end('{"ok":true,"status":"generating"}');
+
+      const { persona, userMsg, isSelf } = built;
+      const system = isSelf
+        ? `You generate a personal intelligence summary for a user reviewing their own conversation history. Return ONLY valid JSON with fields: recentActivity (string), openCommitments (string[]), peopleYouInteractWith (array of {name, count}), communicationPatterns (string), whatChangedRecently (string), suggestedFollowUps (string[]).`
+        : `You analyze conversation artifacts about a person and generate a structured pre-conversation brief. Focus on actionable insights. Be concise. Frame all observations as patterns, never character assessments. Return ONLY valid JSON with fields: who (string), lastInteraction (string), openCommitments (string[]), openQuestions (string[]), signals (string[]), behavioralPatterns (array of {signal, observation, confidence, evidenceCount, caveat}), suggestedFollowUps (string[]), nextSteps (string[]).`;
+
+      console.log(`[brief] generating for ${pid} (${persona.name}), isSelf: ${isSelf}, payload: ${userMsg.length} chars`);
+
+      callClaudeJSON(system, userMsg, {
+        validator: validateBriefShape,
+        maxTokens: 1024,
+        logTag: "brief",
+      }).then((result) => {
+        if (!result.ok) {
+          const existing = db.prepare("SELECT brief_json FROM personas WHERE id = ?").get(pid) as any;
+          let hasGoodCache = false;
+          if (existing?.brief_json) {
+            try {
+              const cached = JSON.parse(existing.brief_json);
+              const envelopeGood = cached?.data != null && !cached?.failed;
+              const legacyGood = cached?.openCommitments != null && cached?.failed == null;
+              hasGoodCache = envelopeGood || legacyGood;
+            } catch { hasGoodCache = false; }
+          }
+          if (hasGoodCache) {
+            console.warn(`[brief] failed for ${pid} — existing cache preserved`);
+          } else {
+            const failRecord = JSON.stringify({
+              failed: true,
+              error: result.error,
+              rawResponse: result.rawResponse ?? null,
+              generatedAt: new Date().toISOString(),
+              data: null,
+            });
+            db.prepare("UPDATE personas SET brief_json = ? WHERE id = ?").run(failRecord, pid);
+            console.error(`[brief] failed for ${pid}, no cache to preserve:`, result.error);
+          }
+          return;
+        }
+        // Match the shape the client-side code used to write so existing
+        // display logic still works: spread Claude output, add generatedAt
+        // (Date.now() number — PersonaBrief type) and type label.
+        const briefData = {
+          ...result.data,
+          generatedAt: Date.now(),
+          type: isSelf ? "self_summary" : "standard",
+        };
+        const record = JSON.stringify({
+          data: briefData,
+          generatedAt: new Date().toISOString(),
+          failed: false,
+          error: null,
+        });
+        db.prepare("UPDATE personas SET brief_json = ? WHERE id = ?").run(record, pid);
+        console.log(`[brief] stored for ${pid} (${persona.name})`);
+      }).catch((err) => {
+        console.error(`[brief] unexpected error for ${pid}:`, err.message);
       });
 
       return;

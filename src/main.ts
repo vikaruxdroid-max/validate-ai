@@ -17,8 +17,6 @@ import {
   StressCuesAnalyzer,
 } from "./analyzers";
 import type { HudPayload, Verdict, PersonaBrief, PersonaSignalSnapshot } from "./models/types";
-import { claudeRequest } from "./services/claude";
-import { CLAUDE_SONNET } from "./utils/models";
 
 // ── Config ──────────────────────────────────────────────────────────
 const DISPLAY_W = 576;
@@ -342,50 +340,40 @@ async function main(): Promise<void> {
   let personaUpdates: Array<{ personaId: string; name: string; changes: string }> = [];
 
   async function generatePersonaBrief(personaId: string): Promise<void> {
+    const PROXY_BASE = "https://vikarux-g2.centralus.cloudapp.azure.com:3001";
+    const briefUrl = `${PROXY_BASE}/api/persona/${encodeURIComponent(personaId)}/brief`;
     const store = orchestrator.getMemoryStore();
-    const persona = store.getPersonaById(personaId);
-    if (!persona) return;
-    const sessions = store.getSessions();
-    const commitments = store.getCommitments();
-    const statuses = store.getCommitmentStatuses();
-    const entities = store.getEntities();
-    const sids = persona.sessionIds || [];
-    const linkedSessions = sessions.filter(s => sids.includes(s.id));
-    const linkedCommits = commitments.filter(c => c.sessionId && sids.includes(c.sessionId));
-    const linkedEntities = entities.filter(e => e.sessionId && sids.includes(e.sessionId));
-    const nameL = persona.name.toLowerCase();
-    const relevantCommits = linkedCommits.filter(c =>
-      (c.text || "").toLowerCase().includes(nameL) || (c.owner || "").toLowerCase().includes(nameL));
-    const openCommits = relevantCommits.filter(c => !statuses[c.text]);
-    const lastSession = linkedSessions[0]; // sorted newest first
 
-    // Sort artifacts by importance_score DESC, cap at 20 per type
-    const sortByImportance = <T extends { importanceScore?: number }>(arr: T[]) =>
-      [...arr].sort((a, b) => (b.importanceScore ?? 0) - (a.importanceScore ?? 0)).slice(0, 20);
-    const topCommits = sortByImportance(relevantCommits);
-    const topEntities = sortByImportance(linkedEntities);
-
-    const artifactPayload = JSON.stringify({
-      persona: { name: persona.name, aliases: persona.aliases, notes: persona.notes, sessionCount: sids.length },
-      sessions: linkedSessions.map(s => ({ label: s.label, startedAt: s.startedAt, endedAt: s.endedAt, stats: s.stats })),
-      commitments: topCommits.map(c => ({ text: c.text, owner: c.owner, dueDate: c.dueDate, done: !!statuses[c.text], score: c.importanceScore })),
-      entities: topEntities.map(e => ({ text: e.text, type: e.type, context: e.context, score: e.importanceScore })),
-      signalSnapshots: persona.signalSnapshots || [],
-    });
-
-    const isSelf = persona.isSelf === true;
-    const system = isSelf
-      ? `You generate a personal intelligence summary for a user reviewing their own conversation history. Return ONLY valid JSON with fields: recentActivity (string), openCommitments (string[]), peopleYouInteractWith (array of {name, count}), communicationPatterns (string), whatChangedRecently (string), suggestedFollowUps (string[]).`
-      : `You analyze conversation artifacts about a person and generate a structured pre-conversation brief. Focus on actionable insights. Be concise. Frame all observations as patterns, never character assessments. Return ONLY valid JSON with fields: who (string), lastInteraction (string), openCommitments (string[]), openQuestions (string[]), signals (string[]), behavioralPatterns (array of {signal, observation, confidence, evidenceCount, caveat}), suggestedFollowUps (string[]), nextSteps (string[]).`;
     try {
-      const raw = await claudeRequest(CLAUDE_SONNET, system,
-        `Person: ${persona.name}\nArtifacts:\n${artifactPayload}`, undefined, 1024);
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) {
-        const brief: PersonaBrief = { ...JSON.parse(match[0]), generatedAt: Date.now(), type: isSelf ? "self_summary" : "standard" };
-        store.setPersonaBrief(personaId, brief);
+      await fetch(briefUrl, { method: "POST", headers: { "Content-Type": "application/json" } });
+    } catch (err) {
+      console.warn("[Brief] POST failed:", err);
+      return;
+    }
+
+    // Poll GET every 3s, max 40 polls (2 min). Server writes brief_json
+    // when Claude returns; we surface it to the in-memory store so the UI
+    // updates without waiting for the next /memory/load.
+    for (let i = 0; i < 40; i++) {
+      await new Promise<void>((r) => setTimeout(r, 3000));
+      try {
+        const res = await fetch(briefUrl);
+        if (!res.ok) continue;
+        const body = await res.json();
+        if (body && body.data != null) {
+          store.setPersonaBrief(personaId, body.data as PersonaBrief);
+          updatePhoneState();
+          return;
+        }
+        if (body && body.failed) {
+          console.warn("[Brief] server reported failure:", body.error);
+          return;
+        }
+      } catch {
+        // keep polling on transient errors
       }
-    } catch (err) { console.warn("[Brief] generation failed:", err); }
+    }
+    console.warn("[Brief] polling timeout — no result after 2 minutes");
   }
 
   function computePostSessionUpdates(endedSessionId: string): void {
