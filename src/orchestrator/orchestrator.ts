@@ -161,6 +161,16 @@ export class Orchestrator {
   /** Start polling loops and auto-save. Returns loaded memory item count. */
   async start(): Promise<number> {
     await this.memoryStore.load();
+
+    // Rehydrate self-persona identity from persisted DB state on boot
+    const personas = this.memoryStore.getPersonas();
+    const selfPersona = personas.find(p => p.isSelf === true);
+    if (selfPersona && !this.selfPersonaId) {
+      this.selfPersonaId = selfPersona.id;
+      this.selfPersonaName = selfPersona.name;
+      console.log("[Orchestrator] Self persona rehydrated on boot:", selfPersona.name);
+    }
+
     this.passiveTimer = setInterval(() => this.runPassiveCycle(), PASSIVE_CYCLE_INTERVAL_MS);
     this.entityExtractTimer = setInterval(() => this.runEntityExtraction(), ENTITY_EXTRACT_INTERVAL_MS);
     this.memoryStore.startAutoSave(AUTO_SAVE_INTERVAL_MS);

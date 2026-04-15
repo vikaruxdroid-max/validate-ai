@@ -39,6 +39,12 @@ export class MemoryStore implements IMemoryStore {
     this.sessions.push(session);
     this.activeSessionId = id;
 
+    // Auto-link self persona to every new session immediately on creation
+    const selfPersona = this.getPersonas().find(p => p.isSelf === true);
+    if (selfPersona) {
+      this.linkArtifactToPersona(selfPersona.id, id);
+    }
+
     return id;
   }
 
