@@ -14,6 +14,7 @@ const CERT_DIR = "/etc/letsencrypt/live/vikarux-g2.centralus.cloudapp.azure.com"
 const MEMORY_PATH = process.env.MEMORY_PATH ?? "/home/vikarux/validate-ai/session-memory.json";
 const DB_PATH = process.env.DB_PATH ?? "/home/vikarux/validate-ai/validateai.db";
 const ANALYSIS_TIMEOUT_MS = Math.max(120_000, Number(process.env.ANALYSIS_TIMEOUT_MS ?? 120_000));
+const ANALYSIS_MAX_TOKENS = Number(process.env.ANALYSIS_MAX_TOKENS ?? 4096);
 
 if (!DG_KEY) {
   console.error("[proxy] DEEPGRAM_API_KEY not set in .env");
@@ -25,6 +26,7 @@ console.log("[proxy] Anthropic key present:", ANTHROPIC_KEY.length > 0);
 console.log("[proxy] Dev token set:", DEV_TOKEN.length > 0);
 console.log("[proxy] DB path:", DB_PATH);
 console.log("[proxy] Analysis timeout:", ANALYSIS_TIMEOUT_MS, "ms");
+console.log("[proxy] Analysis max tokens:", ANALYSIS_MAX_TOKENS);
 
 const db = initDatabase(DB_PATH, MEMORY_PATH);
 
@@ -250,7 +252,7 @@ async function callClaudeJSON(
 function callClaudeAnalysis(system: string, originalUserMsg: string) {
   return callClaudeJSON(system, originalUserMsg, {
     validator: validateAnalysisShape,
-    maxTokens: 2048,
+    maxTokens: ANALYSIS_MAX_TOKENS,
     logTag: "analysis",
   });
 }
